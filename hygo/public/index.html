@@ -2,8 +2,21 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
 <title>HY-GO | HYAI 네트워킹 프로그램</title>
+
+<!-- PWA -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#150b18">
+<meta name="description" content="HYAI 네트워킹 프로그램 미션 인증 & 실시간 리더보드">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HY-GO">
+
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -72,58 +85,16 @@
 <header class="sticky top-0 z-40 glass border-b border-white/10">
   <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
-      <svg viewBox="0 0 200 200" class="w-10 h-10 sm:w-11 sm:h-11 shrink-0" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="hyaiGrad" x1="10%" y1="0%" x2="90%" y2="100%">
-            <stop offset="0%" stop-color="#8f8fe0"/>
-            <stop offset="35%" stop-color="#d488c9"/>
-            <stop offset="70%" stop-color="#f0a3a8"/>
-            <stop offset="100%" stop-color="#f7c98c"/>
-          </linearGradient>
-          <path id="hyaiCirclePath" d="M69.9,182.7 A88,88 0 1 1 130.1,182.7"/>
-        </defs>
-        <circle cx="100" cy="100" r="97" fill="url(#hyaiGrad)" stroke="#5b3a29" stroke-width="2"/>
-        <text font-size="14" letter-spacing="1.1" fill="#5b3a29" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
-          <textPath href="#hyaiCirclePath" startOffset="0%">HANYANG ARTIFICIAL INTELLIGENCE ASSOCIATION</textPath>
-        </text>
-        <g stroke="#5b3a29" stroke-width="2.2" fill="none" opacity="0.92">
-          <line x1="63" y1="63" x2="63" y2="100"/>
-          <line x1="63" y1="63" x2="100" y2="100"/>
-          <line x1="63" y1="63" x2="137" y2="100"/>
-          <line x1="100" y1="63" x2="63" y2="100"/>
-          <line x1="100" y1="63" x2="100" y2="100"/>
-          <line x1="100" y1="63" x2="137" y2="100"/>
-          <line x1="137" y1="63" x2="63" y2="100"/>
-          <line x1="137" y1="63" x2="100" y2="100"/>
-          <line x1="137" y1="63" x2="137" y2="100"/>
-          <line x1="63" y1="100" x2="63" y2="137"/>
-          <line x1="63" y1="100" x2="100" y2="137"/>
-          <line x1="63" y1="100" x2="137" y2="137"/>
-          <line x1="100" y1="100" x2="63" y2="137"/>
-          <line x1="100" y1="100" x2="100" y2="137"/>
-          <line x1="100" y1="100" x2="137" y2="137"/>
-          <line x1="137" y1="100" x2="63" y2="137"/>
-          <line x1="137" y1="100" x2="100" y2="137"/>
-          <line x1="137" y1="100" x2="137" y2="137"/>
-        </g>
-        <g fill="#ffffff" stroke="#5b3a29" stroke-width="2.4">
-          <circle cx="63" cy="63" r="14.5"/>
-          <circle cx="100" cy="63" r="14.5"/>
-          <circle cx="137" cy="63" r="14.5"/>
-          <circle cx="63" cy="100" r="14.5"/>
-          <circle cx="100" cy="100" r="16"/>
-          <circle cx="137" cy="100" r="14.5"/>
-          <circle cx="63" cy="137" r="14.5"/>
-          <circle cx="100" cy="137" r="14.5"/>
-          <circle cx="137" cy="137" r="14.5"/>
-        </g>
-      </svg>
+      <img src="/icons/icon-192.png" alt="HYAI 로고" class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full object-cover ring-1 ring-white/20">
       <div>
         <h1 class="text-base sm:text-lg font-extrabold tracking-tight bg-gradient-to-r from-violet-300 via-fuchsia-300 to-orange-200 bg-clip-text text-transparent leading-none">HY-GO</h1>
         <p class="text-[11px] text-slate-400 leading-none mt-0.5">HYAI 네트워킹 프로그램</p>
       </div>
     </div>
     <div class="flex items-center gap-2 text-[11px] text-slate-500">
+      <button id="installBtn" type="button" class="hidden items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition">
+        <span>📲</span><span>앱 설치</span>
+      </button>
       <span id="connDot" class="conn-dot bg-slate-500"></span>
       <span id="connLabel">연결 중...</span>
       <span class="hidden sm:inline" id="headerClock"></span>
@@ -328,6 +299,76 @@
     </div>
   </div>
 </div>
+
+<!-- iOS 홈 화면 추가 안내 (Safari는 설치 프롬프트 API가 없어 수동 안내가 필요하다) -->
+<div id="iosInstallModal" class="hidden fixed inset-0 z-[70] modal-backdrop flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
+    <div class="flex items-center gap-3">
+      <img src="/icons/icon-192.png" alt="" class="w-11 h-11 rounded-full ring-1 ring-white/20">
+      <div>
+        <h3 class="font-bold text-white">홈 화면에 HY-GO 추가</h3>
+        <p class="text-[11px] text-slate-400 mt-0.5">앱처럼 바로 실행할 수 있어요</p>
+      </div>
+    </div>
+    <ol class="text-sm text-slate-300 space-y-2 leading-relaxed list-decimal list-inside">
+      <li>사파리 하단의 <span class="font-semibold text-white">공유 버튼</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="inline w-4 h-4 -mt-0.5 text-sky-300"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
+        을 누르세요</li>
+      <li>메뉴에서 <span class="font-semibold text-white">‘홈 화면에 추가’</span> 를 선택하세요</li>
+      <li><span class="font-semibold text-white">‘추가’</span> 를 누르면 완료!</li>
+    </ol>
+    <button id="iosInstallClose" class="w-full py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">닫기</button>
+  </div>
+</div>
+
+<!-- PWA: 서비스 워커 등록 & 홈 화면 추가 -->
+<script>
+(function(){
+  "use strict";
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(err => console.warn("[hygo] SW 등록 실패:", err));
+    });
+  }
+
+  const btn = document.getElementById("installBtn");
+  const iosModal = document.getElementById("iosInstallModal");
+  const showBtn = () => { btn.classList.remove("hidden"); btn.classList.add("flex"); };
+  const hideBtn = () => { btn.classList.add("hidden"); btn.classList.remove("flex"); };
+
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  let deferredPrompt = null;
+
+  // Android/Chrome 계열: 설치 가능해지면 버튼을 띄운다.
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (!standalone) showBtn();
+  });
+
+  // iOS Safari: 설치 프롬프트 API가 없으므로 안내 모달로 대체.
+  if (isIOS && !standalone) showBtn();
+
+  btn.addEventListener("click", async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === "accepted") hideBtn();
+      return;
+    }
+    iosModal.classList.remove("hidden");
+  });
+
+  document.getElementById("iosInstallClose").addEventListener("click", () => iosModal.classList.add("hidden"));
+  iosModal.addEventListener("click", e => { if (e.target === iosModal) iosModal.classList.add("hidden"); });
+
+  window.addEventListener("appinstalled", () => { deferredPrompt = null; hideBtn(); });
+})();
+</script>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
