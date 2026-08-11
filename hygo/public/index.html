@@ -300,24 +300,21 @@
   </div>
 </div>
 
-<!-- iOS 홈 화면 추가 안내 (Safari는 설치 프롬프트 API가 없어 수동 안내가 필요하다) -->
-<div id="iosInstallModal" class="hidden fixed inset-0 z-[70] modal-backdrop flex items-center justify-center p-4">
+<!-- 홈 화면 추가 안내 (Safari/인앱 브라우저는 설치 프롬프트 API가 없어 수동 안내가 필요하다) -->
+<div id="installModal" class="hidden fixed inset-0 z-[70] modal-backdrop flex items-center justify-center p-4">
   <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
     <div class="flex items-center gap-3">
       <img src="/icons/icon-192.png" alt="" class="w-11 h-11 rounded-full ring-1 ring-white/20">
       <div>
-        <h3 class="font-bold text-white">홈 화면에 HY-GO 추가</h3>
+        <h3 id="installModalTitle" class="font-bold text-white">홈 화면에 HY-GO 추가</h3>
         <p class="text-[11px] text-slate-400 mt-0.5">앱처럼 바로 실행할 수 있어요</p>
       </div>
     </div>
-    <ol class="text-sm text-slate-300 space-y-2 leading-relaxed list-decimal list-inside">
-      <li>사파리 하단의 <span class="font-semibold text-white">공유 버튼</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="inline w-4 h-4 -mt-0.5 text-sky-300"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
-        을 누르세요</li>
-      <li>메뉴에서 <span class="font-semibold text-white">‘홈 화면에 추가’</span> 를 선택하세요</li>
-      <li><span class="font-semibold text-white">‘추가’</span> 를 누르면 완료!</li>
-    </ol>
-    <button id="iosInstallClose" class="w-full py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">닫기</button>
+    <div id="installGuide" class="text-sm text-slate-300 space-y-2 leading-relaxed"></div>
+    <div class="flex gap-2.5">
+      <button id="installCopyLink" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">링크 복사</button>
+      <button id="installModalClose" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">닫기</button>
+    </div>
   </div>
 </div>
 
@@ -333,24 +330,105 @@
   }
 
   const btn = document.getElementById("installBtn");
-  const iosModal = document.getElementById("iosInstallModal");
+  const modal = document.getElementById("installModal");
+  const guide = document.getElementById("installGuide");
+  const title = document.getElementById("installModalTitle");
   const showBtn = () => { btn.classList.remove("hidden"); btn.classList.add("flex"); };
   const hideBtn = () => { btn.classList.add("hidden"); btn.classList.remove("flex"); };
 
+  const ua = navigator.userAgent;
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isIOS = /iphone|ipad|ipod/i.test(ua) ||
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS는 데스크톱 UA로 위장한다
+  const isAndroid = /android/i.test(ua);
+  // 카카오톡·인스타 등 인앱 브라우저는 공유 시트에 '홈 화면에 추가'가 아예 없다.
+  const inApp = /KAKAOTALK|KAKAOSTORY|NAVER\(inapp|DaumApps|Instagram|FBAN|FBAV|FB_IAB|Line\/|everytimeApp|Snapchat|TwitterAndroid|MicroMessenger/i.test(ua);
+  // iOS에서 '홈 화면에 추가'가 나오는 건 진짜 사파리뿐이다(크롬/파폭 iOS는 별도 경로).
+  const isIOSSafari = isIOS && !inApp && !/CriOS|FxiOS|EdgiOS|Whale|OPT\//i.test(ua);
+
+  const shareIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="inline w-4 h-4 -mt-0.5 text-sky-300"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>';
+  const b = t => '<span class="font-semibold text-white">' + t + '</span>';
+  const steps = items => '<ol class="space-y-2 list-decimal list-inside">' + items.map(i => "<li>" + i + "</li>").join("") + "</ol>";
+  const warn = t => '<p class="text-[12px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2 leading-relaxed">' + t + "</p>";
+
+  // 인앱 브라우저 탈출: 카카오톡은 전용 스킴, 안드로이드는 크롬 인텐트로 넘긴다.
+  function openExternally() {
+    const url = location.href;
+    if (/KAKAOTALK/i.test(ua)) {
+      location.href = "kakaotalk://web/openExternal?url=" + encodeURIComponent(url);
+      return true;
+    }
+    if (isAndroid) {
+      location.href = "intent://" + location.host + location.pathname + location.search +
+        "#Intent;scheme=" + location.protocol.replace(":", "") + ";package=com.android.chrome;end";
+      return true;
+    }
+    return false;
+  }
+
+  function renderGuide() {
+    if (inApp) {
+      title.textContent = "먼저 기본 브라우저로 열어주세요";
+      guide.innerHTML =
+        warn("지금은 카카오톡·인스타그램 같은 <b>앱 안의 브라우저</b>예요. 여기서는 공유 메뉴에 ‘홈 화면에 추가’가 나오지 않습니다.") +
+        steps([
+          "오른쪽 아래 " + b("···") + " (또는 " + b("공유") + ") 를 누르세요",
+          b(isIOS ? "‘Safari로 열기’" : "‘다른 브라우저로 열기’") + " 를 선택하세요",
+          "열린 브라우저에서 다시 " + b("📲 앱 설치") + " 를 누르면 돼요",
+        ]) +
+        '<button id="installOpenExternal" class="w-full mt-1 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white transition hover:opacity-90">' +
+        (isIOS ? "Safari로 바로 열기" : "크롬으로 바로 열기") + "</button>";
+      const ext = document.getElementById("installOpenExternal");
+      if (ext) ext.addEventListener("click", () => {
+        if (!openExternally()) ext.textContent = "‘링크 복사’ 후 브라우저에 붙여넣어 주세요";
+      });
+      return;
+    }
+
+    if (isIOS && !isIOSSafari) {
+      title.textContent = "Safari에서 열어주세요";
+      guide.innerHTML =
+        warn("아이폰에서는 <b>Safari</b>에서만 홈 화면 추가가 가능합니다. 크롬·네이버 등 다른 브라우저에는 그 메뉴가 없어요.") +
+        steps([
+          "아래 " + b("링크 복사") + " 를 누르세요",
+          b("Safari") + " 를 열고 주소창에 붙여넣어 접속하세요",
+          "다시 " + b("📲 앱 설치") + " 를 누르면 돼요",
+        ]);
+      return;
+    }
+
+    if (isIOS) {
+      title.textContent = "홈 화면에 HY-GO 추가";
+      guide.innerHTML =
+        steps([
+          "화면 하단 가운데의 " + b("공유 버튼") + " " + shareIcon + " 을 누르세요",
+          "메뉴를 " + b("아래로 스크롤") + " 해서 " + b("‘홈 화면에 추가’") + " 를 찾으세요",
+          b("‘추가’") + " 를 누르면 완료!",
+        ]) +
+        warn("메뉴에 안 보이나요? ① " + b("시크릿 브라우징") + " 중이면 이 항목이 숨겨집니다 — 일반 탭에서 다시 열어주세요. " +
+             "② 목록 맨 아래 " + b("‘작업 편집’") + " 에 들어가면 ‘홈 화면에 추가’를 다시 켤 수 있어요.");
+      return;
+    }
+
+    title.textContent = "홈 화면에 HY-GO 추가";
+    guide.innerHTML = steps([
+      "브라우저 오른쪽 위 " + b("⋮") + " 메뉴를 누르세요",
+      b("‘홈 화면에 추가’") + " 또는 " + b("‘앱 설치’") + " 를 선택하세요",
+      b("‘설치’") + " 를 누르면 완료!",
+    ]);
+  }
 
   let deferredPrompt = null;
 
-  // Android/Chrome 계열: 설치 가능해지면 버튼을 띄운다.
+  // Android/Chrome 계열: 설치 가능해지면 네이티브 설치창을 쓸 수 있다.
   window.addEventListener("beforeinstallprompt", e => {
     e.preventDefault();
     deferredPrompt = e;
     if (!standalone) showBtn();
   });
 
-  // iOS Safari: 설치 프롬프트 API가 없으므로 안내 모달로 대체.
-  if (isIOS && !standalone) showBtn();
+  // 그 외 환경(iOS·인앱 브라우저 등)은 프롬프트 API가 없으므로 안내 모달로 대체한다.
+  if (!standalone && (isIOS || inApp)) showBtn();
 
   btn.addEventListener("click", async () => {
     if (deferredPrompt) {
@@ -360,11 +438,30 @@
       if (outcome === "accepted") hideBtn();
       return;
     }
-    iosModal.classList.remove("hidden");
+    renderGuide();
+    modal.classList.remove("hidden");
   });
 
-  document.getElementById("iosInstallClose").addEventListener("click", () => iosModal.classList.add("hidden"));
-  iosModal.addEventListener("click", e => { if (e.target === iosModal) iosModal.classList.add("hidden"); });
+  document.getElementById("installCopyLink").addEventListener("click", async e => {
+    const el = e.currentTarget;
+    try {
+      await navigator.clipboard.writeText(location.href);
+    } catch (err) {
+      const ta = document.createElement("textarea");
+      ta.value = location.href;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e2) { /* 복사 불가 환경 */ }
+      document.body.removeChild(ta);
+    }
+    el.textContent = "복사됨!";
+    setTimeout(() => { el.textContent = "링크 복사"; }, 1800);
+  });
+
+  document.getElementById("installModalClose").addEventListener("click", () => modal.classList.add("hidden"));
+  modal.addEventListener("click", e => { if (e.target === modal) modal.classList.add("hidden"); });
 
   window.addEventListener("appinstalled", () => { deferredPrompt = null; hideBtn(); });
 })();
