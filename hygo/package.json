@@ -1,0 +1,18 @@
+{
+  "name": "hygo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HYAI 네트워킹 프로그램 HY-GO",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

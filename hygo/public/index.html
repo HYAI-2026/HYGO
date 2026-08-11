@@ -9,11 +9,8 @@
   tailwind.config = {
     theme: {
       extend: {
-        colors: {
-          base: { 900: '#0a0a14', 800: '#0f0f1e', 700: '#151528' },
-        },
         boxShadow: {
-          glow: '0 0 40px -10px rgba(129,140,248,0.35)',
+          glow: '0 0 40px -10px rgba(217,70,239,0.35)',
         },
         keyframes: {
           fadeIn: { '0%': { opacity: 0, transform: 'translateY(6px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
@@ -30,14 +27,14 @@
 <style>
   html { scroll-behavior: smooth; }
   body {
-    background: radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,0.20), transparent 60%),
-                radial-gradient(1000px 500px at 100% 0%, rgba(168,85,247,0.16), transparent 55%),
-                radial-gradient(800px 500px at 50% 100%, rgba(59,130,246,0.14), transparent 55%),
-                #08080f;
+    background: radial-gradient(1200px 600px at 8% -10%, rgba(139,92,246,0.22), transparent 60%),
+                radial-gradient(1000px 550px at 100% 0%, rgba(236,72,153,0.20), transparent 55%),
+                radial-gradient(900px 550px at 60% 100%, rgba(251,146,60,0.16), transparent 55%),
+                #150b18;
   }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(129,140,248,0.35); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb { background: rgba(232,121,249,0.35); border-radius: 999px; }
   .glass {
     background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
     border: 1px solid rgba(255,255,255,0.08);
@@ -45,24 +42,25 @@
   }
   .tab-btn.active {
     color: #fff;
-    background: linear-gradient(135deg, #6366f1, #a855f7);
-    box-shadow: 0 8px 20px -6px rgba(99,102,241,0.55);
+    background: linear-gradient(135deg, #8b5cf6, #ec4899 55%, #fb923c);
+    box-shadow: 0 8px 20px -6px rgba(236,72,153,0.5);
   }
   .rank-1 { background: linear-gradient(135deg, rgba(250,204,21,0.16), rgba(255,255,255,0.03)); border-color: rgba(250,204,21,0.45) !important; }
   .rank-2 { background: linear-gradient(135deg, rgba(203,213,225,0.14), rgba(255,255,255,0.03)); border-color: rgba(203,213,225,0.4) !important; }
   .rank-3 { background: linear-gradient(135deg, rgba(217,119,6,0.16), rgba(255,255,255,0.03)); border-color: rgba(217,119,6,0.4) !important; }
   input[type="file"]::file-selector-button {
-    background: rgba(99,102,241,0.2);
-    border: 1px solid rgba(99,102,241,0.4);
-    color: #c7d2fe;
+    background: rgba(236,72,153,0.18);
+    border: 1px solid rgba(236,72,153,0.4);
+    color: #fbcfe8;
     padding: 6px 12px;
     border-radius: 8px;
     margin-right: 12px;
     cursor: pointer;
   }
-  input[type="file"]::file-selector-button:hover { background: rgba(99,102,241,0.32); }
-  select option { background-color: #12121f; color: #fff; }
-  .modal-backdrop { background: rgba(3,3,10,0.72); backdrop-filter: blur(4px); }
+  input[type="file"]::file-selector-button:hover { background: rgba(236,72,153,0.3); }
+  select option { background-color: #1c1022; color: #fff; }
+  .modal-backdrop { background: rgba(10,3,12,0.72); backdrop-filter: blur(4px); }
+  .conn-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
 </style>
 </head>
 <body class="min-h-screen text-slate-200 font-sans pb-24">
@@ -74,13 +72,60 @@
 <header class="sticky top-0 z-40 glass border-b border-white/10">
   <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2.5">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-lg shadow-glow">🚀</div>
+      <svg viewBox="0 0 200 200" class="w-10 h-10 sm:w-11 sm:h-11 shrink-0" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hyaiGrad" x1="10%" y1="0%" x2="90%" y2="100%">
+            <stop offset="0%" stop-color="#8f8fe0"/>
+            <stop offset="35%" stop-color="#d488c9"/>
+            <stop offset="70%" stop-color="#f0a3a8"/>
+            <stop offset="100%" stop-color="#f7c98c"/>
+          </linearGradient>
+          <path id="hyaiCirclePath" d="M100,22 a78,78 0 1,1 -0.1,0"/>
+        </defs>
+        <circle cx="100" cy="100" r="97" fill="url(#hyaiGrad)" stroke="#5b3a29" stroke-width="2"/>
+        <text font-size="12.5" letter-spacing="1.4" fill="#5b3a29" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+          <textPath href="#hyaiCirclePath" startOffset="1%">HANYANG ARTIFICIAL INTELLIGENCE ASSOCIATION •</textPath>
+        </text>
+        <g stroke="#5b3a29" stroke-width="2.4" fill="none" opacity="0.92">
+          <line x1="100" y1="100" x2="68" y2="68"/>
+          <line x1="100" y1="100" x2="100" y2="68"/>
+          <line x1="100" y1="100" x2="132" y2="68"/>
+          <line x1="100" y1="100" x2="132" y2="100"/>
+          <line x1="100" y1="100" x2="132" y2="132"/>
+          <line x1="100" y1="100" x2="100" y2="132"/>
+          <line x1="100" y1="100" x2="68" y2="132"/>
+          <line x1="100" y1="100" x2="68" y2="100"/>
+          <line x1="68" y1="68" x2="100" y2="68"/>
+          <line x1="100" y1="68" x2="132" y2="68"/>
+          <line x1="132" y1="68" x2="132" y2="100"/>
+          <line x1="132" y1="100" x2="132" y2="132"/>
+          <line x1="132" y1="132" x2="100" y2="132"/>
+          <line x1="100" y1="132" x2="68" y2="132"/>
+          <line x1="68" y1="132" x2="68" y2="100"/>
+          <line x1="68" y1="100" x2="68" y2="68"/>
+        </g>
+        <g fill="#f3e8f0" stroke="#5b3a29" stroke-width="2.4">
+          <circle cx="68" cy="68" r="12.5"/>
+          <circle cx="100" cy="68" r="12.5"/>
+          <circle cx="132" cy="68" r="12.5"/>
+          <circle cx="68" cy="100" r="12.5"/>
+          <circle cx="100" cy="100" r="14"/>
+          <circle cx="132" cy="100" r="12.5"/>
+          <circle cx="68" cy="132" r="12.5"/>
+          <circle cx="100" cy="132" r="12.5"/>
+          <circle cx="132" cy="132" r="12.5"/>
+        </g>
+      </svg>
       <div>
-        <h1 class="text-base sm:text-lg font-extrabold tracking-tight bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent leading-none">HY-GO</h1>
+        <h1 class="text-base sm:text-lg font-extrabold tracking-tight bg-gradient-to-r from-violet-300 via-fuchsia-300 to-orange-200 bg-clip-text text-transparent leading-none">HY-GO</h1>
         <p class="text-[11px] text-slate-400 leading-none mt-0.5">HYAI 네트워킹 프로그램</p>
       </div>
     </div>
-    <div class="text-[11px] text-slate-500 hidden sm:block" id="headerClock"></div>
+    <div class="flex items-center gap-2 text-[11px] text-slate-500">
+      <span id="connDot" class="conn-dot bg-slate-500"></span>
+      <span id="connLabel">연결 중...</span>
+      <span class="hidden sm:inline" id="headerClock"></span>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -120,27 +165,27 @@
 
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">팀 선택</label>
-        <select id="teamSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+        <select id="teamSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
       </div>
 
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">미션 유형</label>
-        <select id="missionSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+        <select id="missionSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
       </div>
 
       <div id="surprisePointsWrap" class="hidden">
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">돌발 미션 배점 (관리자 공지 점수를 입력하세요)</label>
-        <input id="surprisePoints" type="number" min="1" step="1" value="10" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <input id="surprisePoints" type="number" min="1" step="1" value="10" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
       </div>
 
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">참여 인원 <span class="text-slate-500 font-normal">(최소 3명)</span></label>
-        <input id="participantCount" type="number" min="1" step="1" value="3" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <input id="participantCount" type="number" min="1" step="1" value="3" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
       </div>
 
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">한 줄 메모 / 참가자 이름</label>
-        <input id="memoInput" type="text" maxlength="80" placeholder="예: 김하이, 이인공, 박지능 - 저녁에 삼겹살 완食" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <input id="memoInput" type="text" maxlength="80" placeholder="예: 김하이, 이인공, 박지능 - 저녁에 삼겹살 완食" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
       </div>
 
       <div>
@@ -149,9 +194,10 @@
         <div id="photoPreviewWrap" class="hidden mt-3">
           <img id="photoPreview" class="w-full max-h-64 object-cover rounded-xl border border-white/10">
         </div>
+        <p id="photoStatus" class="hidden text-[11px] text-fuchsia-300 mt-1.5">이미지 처리 중...</p>
       </div>
 
-      <button type="submit" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition shadow-glow">
+      <button type="submit" id="submitBtn" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">
         인증 제출하기
       </button>
       <p class="text-[11px] text-center text-slate-500">제출한 인증은 관리자 검수 후 리더보드에 반영됩니다.</p>
@@ -170,8 +216,8 @@
       <div class="text-3xl">🔒</div>
       <h2 class="text-base font-bold text-white">관리자 인증</h2>
       <p class="text-xs text-slate-500">기획진 전용 페이지입니다. 암호를 입력하세요.</p>
-      <input id="adminPassword" type="password" placeholder="암호 입력" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
-      <button id="adminLoginBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition">입장하기</button>
+      <input id="adminPassword" type="password" placeholder="암호 입력" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      <button id="adminLoginBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition">입장하기</button>
       <p id="adminLoginError" class="hidden text-xs text-rose-400">암호가 올바르지 않습니다.</p>
     </div>
 
@@ -189,11 +235,29 @@
       <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
         <h3 class="text-sm font-bold text-slate-300">⚙️ 수동 포인트 조정</h3>
         <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-          <select id="adjustTeamSelect" class="sm:col-span-2 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
-          <input id="adjustPoints" type="number" step="1" placeholder="예: 5 또는 -5" class="bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <button id="adjustApplyBtn" class="py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition">적용</button>
+          <select id="adjustTeamSelect" class="sm:col-span-2 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
+          <input id="adjustPoints" type="number" step="1" placeholder="예: 5 또는 -5" class="bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <button id="adjustApplyBtn" class="py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition">적용</button>
         </div>
-        <input id="adjustReason" type="text" maxlength="60" placeholder="조정 사유 (선택)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <input id="adjustReason" type="text" maxlength="60" placeholder="조정 사유 (선택)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-slate-300">👥 팀 관리</h3>
+          <span class="text-[11px] text-slate-500">현재 <span id="teamCount">0</span>팀</span>
+        </div>
+        <div class="flex gap-2">
+          <input id="newTeamName" type="text" maxlength="20" placeholder="새 팀 이름 (비우면 자동 번호)" class="flex-1 min-w-0 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <button id="addTeamBtn" class="px-4 py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition whitespace-nowrap">+ 팀 추가</button>
+        </div>
+        <div id="teamManageList" class="space-y-1.5 max-h-56 overflow-y-auto"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-2 border border-rose-500/30">
+        <h3 class="text-sm font-bold text-rose-300">⚠️ 데이터 초기화</h3>
+        <p class="text-[11px] text-slate-500">모든 팀 점수와 인증 내역이 삭제되고 샘플 데이터로 초기화됩니다. 되돌릴 수 없어요.</p>
+        <button id="resetDataBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-rose-500/20 text-rose-300 border border-rose-400/40 hover:bg-rose-500/30 transition">전체 데이터 초기화</button>
       </div>
     </div>
   </section>
@@ -211,13 +275,10 @@
   </div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
   "use strict";
-
-  const STORAGE_KEY = "hygoData_v1";
-  const ADMIN_PASSWORD = "hyai1234";
-  const DAILY_CAP = 15;
 
   const MISSIONS = [
     { key: "drink",    category: "일상", emoji: "🍺", label: "술 마시기",       points: 10 },
@@ -230,17 +291,21 @@
   ];
   const missionByKey = k => MISSIONS.find(m => m.key === k);
 
+  let data = { teams: [], submissions: [], adjustments: [] };
   let isAdmin = false;
-  let data = null;
+  let adminPw = sessionStorage.getItem("hygoAdminPw") || null;
+  let currentHistoryTeamId = null;
+  let currentPhotoDataUrl = null;
+  let photoProcessing = false;
+
+  const socket = io("/hygo");
 
   // ---------- utils ----------
-  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  const todayKey = iso => iso.slice(0, 10);
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const fmtDate = iso => {
     const d = new Date(iso);
     return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   };
-  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
   function toast(msg, type){
     const el = document.getElementById("toast");
@@ -248,95 +313,52 @@
     el.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl text-sm font-medium shadow-glow animate-fadeIn " +
       (type === "error" ? "bg-rose-500/90 text-white" : "bg-emerald-500/90 text-white");
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
+    toast._t = setTimeout(() => el.classList.add("hidden"), 2800);
   }
 
-  function placeholderPhoto(emoji, seedNum){
-    const hues = [245, 265, 285, 200, 320, 165];
-    const h = hues[seedNum % hues.length];
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'>
-      <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-        <stop offset='0%' stop-color='hsl(${h},70%,45%)'/>
-        <stop offset='100%' stop-color='hsl(${h+40},70%,30%)'/>
-      </linearGradient></defs>
-      <rect width='400' height='300' fill='url(#g)'/>
-      <text x='50%' y='54%' font-size='90' text-anchor='middle' dominant-baseline='middle'>${emoji}</text>
-    </svg>`;
-    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  // ---------- api ----------
+  async function apiGet(url){
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("불러오기에 실패했어요.");
+    return res.json();
+  }
+  async function apiSend(method, url, body){
+    const headers = { "Content-Type": "application/json" };
+    if (adminPw) headers["x-admin-password"] = adminPw;
+    const res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "요청에 실패했어요.");
+    return json;
   }
 
-  // ---------- storage ----------
-  function loadData(){
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch(e){ console.warn("failed to parse stored data", e); }
-    return null;
-  }
-  function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+  // ---------- socket ----------
+  socket.on("connect", () => {
+    document.getElementById("connDot").className = "conn-dot bg-emerald-400";
+    document.getElementById("connLabel").textContent = "실시간 연결됨";
+  });
+  socket.on("disconnect", () => {
+    document.getElementById("connDot").className = "conn-dot bg-rose-400";
+    document.getElementById("connLabel").textContent = "연결 끊김";
+  });
+  socket.on("state", payload => {
+    data = payload;
+    renderAll();
+  });
 
-  function seedData(){
-    const teams = [];
-    for (let i = 1; i <= 8; i++) teams.push({ id: i, name: `${i}팀`, points: 0, missionsCount: 0 });
-
-    const now = Date.now();
-    const daysAgo = n => new Date(now - n * 86400000).toISOString();
-
-    const submissions = [];
-    function addApproved(teamId, missionKey, participants, memo, daysBack, awarded){
-      const m = missionByKey(missionKey);
-      const createdAt = daysAgo(daysBack);
-      submissions.push({
-        id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
-        participants, memo, photo: placeholderPhoto(m.emoji, teamId + submissions.length),
-        status: "approved", createdAt, approvedAt: createdAt,
-        awardedPoints: awarded !== undefined ? awarded : m.points,
-      });
+  function renderAll(){
+    renderLeaderboard();
+    if (document.getElementById("tab-submit").classList.contains("hidden") === false) {
+      populateTeamSelect();
     }
-
-    addApproved(1, "drink", 5, "OT 뒤풀이 삼겹살집에서!", 3, 10);
-    addApproved(1, "study", 4, "알고리즘 스터디 완료", 2, 5);
-    addApproved(1, "cafe", 3, "팀플 회의 겸 카페", 1, 5);
-    addApproved(1, "photo", 6, "단체 인증샷", 1, 3);
-
-    addApproved(2, "meal", 4, "학식 같이 먹기", 2, 5);
-    addApproved(2, "karaoke", 5, "노래방 2시간", 2, 5);
-    addApproved(2, "surprise", 6, "1주차 돌발미션: 교수님과 셀카", 1, 15);
-
-    addApproved(3, "drink", 4, "치맥 모임", 3, 10);
-    addApproved(3, "cafe", 3, "스터디카페 방문", 1, 5);
-
-    addApproved(4, "study", 3, "코딩테스트 스터디", 2, 5);
-    addApproved(4, "photo", 3, "실습실 인증샷", 1, 3);
-
-    // a couple pending items for admin demo
-    submissions.push({
-      id: uid(), teamId: 5, missionKey: "meal", category: "일상", label: "밥 먹기", emoji: "🍚",
-      participants: 3, memo: "저녁 같이 먹었어요", photo: placeholderPhoto("🍚", 50),
-      status: "pending", createdAt: new Date().toISOString(),
-    });
-    submissions.push({
-      id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
-      participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
-      status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15,
-    });
-
-    const adjustments = [];
-
-    // recompute team totals from seeded approved submissions
-    submissions.filter(s => s.status === "approved").forEach(s => {
-      const t = teams.find(t => t.id === s.teamId);
-      t.points += s.awardedPoints;
-      t.missionsCount += 1;
-    });
-
-    data = { teams, submissions, adjustments };
-    saveData();
-  }
-
-  function ensureData(){
-    data = loadData();
-    if (!data) seedData();
+    renderFeed();
+    if (isAdmin) {
+      renderPendingList();
+      populateAdjustTeamSelect();
+      renderTeamManageList();
+    }
+    if (!document.getElementById("historyModal").classList.contains("hidden") && currentHistoryTeamId != null) {
+      renderTeamHistory(currentHistoryTeamId);
+    }
   }
 
   // ---------- tabs ----------
@@ -361,7 +383,7 @@
       const rank = idx + 1;
       const isTop3 = idx < 3;
       return `
-      <button data-team="${team.id}" class="team-row w-full text-left glass ${isTop3 ? rankClass[idx] : ""} rounded-2xl px-4 py-3.5 flex items-center gap-3.5 hover:scale-[1.01] hover:border-indigo-400/40 transition">
+      <button data-team="${team.id}" class="team-row w-full text-left glass ${isTop3 ? rankClass[idx] : ""} rounded-2xl px-4 py-3.5 flex items-center gap-3.5 hover:scale-[1.01] hover:border-fuchsia-400/40 transition">
         <div class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-lg font-extrabold ${isTop3 ? "bg-white/10" : "bg-black/30 text-slate-400"}">
           ${isTop3 ? medal[idx] : rank}
         </div>
@@ -370,7 +392,7 @@
           <p class="text-[11px] text-slate-500">달성 미션 ${team.missionsCount}개</p>
         </div>
         <div class="text-right shrink-0">
-          <p class="text-lg font-extrabold bg-gradient-to-r from-indigo-300 to-fuchsia-300 bg-clip-text text-transparent">${team.points}</p>
+          <p class="text-lg font-extrabold bg-gradient-to-r from-fuchsia-300 to-orange-200 bg-clip-text text-transparent">${team.points}</p>
           <p class="text-[10px] text-slate-500">POINTS</p>
         </div>
       </button>`;
@@ -382,7 +404,13 @@
   }
 
   function openTeamHistory(teamId){
+    currentHistoryTeamId = teamId;
+    renderTeamHistory(teamId);
+    document.getElementById("historyModal").classList.remove("hidden");
+  }
+  function renderTeamHistory(teamId){
     const team = data.teams.find(t => t.id === teamId);
+    if (!team){ closeHistoryModal(); return; }
     document.getElementById("historyModalTitle").textContent = `${team.name} 미션 내역`;
     const body = document.getElementById("historyModalBody");
 
@@ -423,14 +451,18 @@
         }
       }).join("");
     }
-    document.getElementById("historyModal").classList.remove("hidden");
   }
-  function closeHistoryModal(){ document.getElementById("historyModal").classList.add("hidden"); }
+  function closeHistoryModal(){
+    document.getElementById("historyModal").classList.add("hidden");
+    currentHistoryTeamId = null;
+  }
 
   // ---------- submit form ----------
   function populateTeamSelect(){
     const sel = document.getElementById("teamSelect");
+    const prev = sel.value;
     sel.innerHTML = data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+    if (data.teams.some(t => String(t.id) === prev)) sel.value = prev;
   }
   function populateMissionSelect(){
     const sel = document.getElementById("missionSelect");
@@ -448,26 +480,69 @@
     wrap.classList.toggle("hidden", missionByKey(key)?.category !== "돌발");
   }
 
-  function handlePhotoChange(e){
-    const file = e.target.files[0];
-    const wrap = document.getElementById("photoPreviewWrap");
-    const img = document.getElementById("photoPreview");
-    if (!file){ wrap.classList.add("hidden"); img.src = ""; return; }
-    const reader = new FileReader();
-    reader.onload = () => { img.src = reader.result; wrap.classList.remove("hidden"); };
-    reader.readAsDataURL(file);
+  function compressImage(file){
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith("image/")) { reject(new Error("이미지 파일만 업로드할 수 있어요.")); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("파일을 읽을 수 없어요."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("이미지를 불러올 수 없어요."));
+        img.onload = () => {
+          const maxSide = 1280;
+          let { width, height } = img;
+          if (width > maxSide || height > maxSide) {
+            if (width > height) { height = Math.round(height * maxSide / width); width = maxSide; }
+            else { width = Math.round(width * maxSide / height); height = maxSide; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.72));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
-  function handleSubmit(e){
+  async function handlePhotoChange(e){
+    const file = e.target.files[0];
+    const wrap = document.getElementById("photoPreviewWrap");
+    const status = document.getElementById("photoStatus");
+    const img = document.getElementById("photoPreview");
+    currentPhotoDataUrl = null;
+    if (!file){ wrap.classList.add("hidden"); img.src = ""; status.classList.add("hidden"); return; }
+
+    photoProcessing = true;
+    status.classList.remove("hidden");
+    wrap.classList.add("hidden");
+    try {
+      const dataUrl = await compressImage(file);
+      currentPhotoDataUrl = dataUrl;
+      img.src = dataUrl;
+      wrap.classList.remove("hidden");
+    } catch (err) {
+      toast(err.message, "error");
+      e.target.value = "";
+    } finally {
+      photoProcessing = false;
+      status.classList.add("hidden");
+    }
+  }
+
+  async function handleSubmit(e){
     e.preventDefault();
     const teamId = Number(document.getElementById("teamSelect").value);
     const missionKey = document.getElementById("missionSelect").value;
     const mission = missionByKey(missionKey);
     const participants = Number(document.getElementById("participantCount").value);
     const memo = document.getElementById("memoInput").value.trim();
-    const photoImg = document.getElementById("photoPreview").src;
-    const hasPhoto = photoImg && photoImg.startsWith("data:");
 
+    if (photoProcessing){
+      toast("이미지 처리가 끝날 때까지 잠시만 기다려주세요.", "error");
+      return;
+    }
     if (participants < 3){
       toast("참여 인원은 최소 3명 이상이어야 해요.", "error");
       return;
@@ -476,34 +551,34 @@
       toast("한 줄 메모 또는 참가자 이름을 입력해주세요.", "error");
       return;
     }
-    if (!hasPhoto){
+    if (!currentPhotoDataUrl){
       toast("인증 사진을 업로드해주세요.", "error");
       return;
     }
 
-    let proposedPoints;
+    const payload = { teamId, missionKey, participants, memo, photo: currentPhotoDataUrl };
     if (mission.category === "돌발"){
-      proposedPoints = Number(document.getElementById("surprisePoints").value) || 0;
-      if (proposedPoints <= 0){
-        toast("돌발 미션 배점을 입력해주세요.", "error");
-        return;
-      }
+      const pts = Number(document.getElementById("surprisePoints").value) || 0;
+      if (pts <= 0){ toast("돌발 미션 배점을 입력해주세요.", "error"); return; }
+      payload.proposedPoints = pts;
     }
 
-    const sub = {
-      id: uid(), teamId, missionKey, category: mission.category, label: mission.label, emoji: mission.emoji,
-      participants, memo, photo: photoImg,
-      status: "pending", createdAt: new Date().toISOString(),
-    };
-    if (proposedPoints !== undefined) sub.proposedPoints = proposedPoints;
-
-    data.submissions.push(sub);
-    saveData();
-
-    toast("인증이 제출되었어요! 관리자 검수를 기다려주세요 🙌");
-    e.target.reset();
-    document.getElementById("photoPreviewWrap").classList.add("hidden");
-    populateMissionSelect();
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
+    btn.textContent = "제출 중...";
+    try {
+      await apiSend("POST", "/api/hygo/submissions", payload);
+      toast("인증이 제출되었어요! 관리자 검수를 기다려주세요 🙌");
+      e.target.reset();
+      currentPhotoDataUrl = null;
+      document.getElementById("photoPreviewWrap").classList.add("hidden");
+      populateMissionSelect();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "인증 제출하기";
+    }
   }
 
   // ---------- feed ----------
@@ -525,7 +600,7 @@
         <img src="${s.photo}" class="w-full h-48 object-cover">
         <div class="p-3.5 space-y-1.5">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">${escapeHtml(team ? team.name : "?")}</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">${escapeHtml(team ? team.name : "?")}</span>
             <span class="text-xs font-bold text-emerald-400">+${s.awardedPoints}p</span>
           </div>
           <p class="text-sm font-semibold text-white">${s.emoji} ${escapeHtml(s.label)}</p>
@@ -537,12 +612,25 @@
   }
 
   // ---------- admin ----------
+  async function tryAutoLogin(){
+    if (!adminPw) return;
+    try {
+      await apiSend("POST", "/api/hygo/admin/login", { password: adminPw });
+      isAdmin = true;
+    } catch (e) {
+      adminPw = null;
+      sessionStorage.removeItem("hygoAdminPw");
+      isAdmin = false;
+    }
+  }
+
   function renderAdmin(){
     document.getElementById("adminLoginBox").classList.toggle("hidden", isAdmin);
     document.getElementById("adminPanel").classList.toggle("hidden", !isAdmin);
     if (!isAdmin) return;
     renderPendingList();
     populateAdjustTeamSelect();
+    renderTeamManageList();
   }
 
   function renderPendingList(){
@@ -566,7 +654,7 @@
         <img src="${s.photo}" class="w-full sm:w-28 h-40 sm:h-28 object-cover rounded-xl border border-white/10 shrink-0">
         <div class="flex-1 min-w-0 space-y-1">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">${escapeHtml(team ? team.name : "?")}</span>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">${escapeHtml(team ? team.name : "?")}</span>
             <span class="text-xs font-semibold text-slate-300">${s.emoji} ${escapeHtml(s.label)}</span>
             <span class="text-xs font-bold text-amber-400">${pts}점</span>
           </div>
@@ -584,56 +672,35 @@
     el.querySelectorAll("[data-reject]").forEach(btn => btn.addEventListener("click", () => rejectSubmission(btn.dataset.reject)));
   }
 
-  function approveSubmission(id){
-    const sub = data.submissions.find(s => s.id === id);
-    if (!sub || sub.status !== "pending") return;
-    const team = data.teams.find(t => t.id === sub.teamId);
-    const mission = missionByKey(sub.missionKey);
-
-    let award;
-    if (mission.category === "일상"){
-      const day = todayKey(sub.createdAt);
-      const sameDayTotal = data.submissions
-        .filter(s => s.teamId === sub.teamId && s.status === "approved" && s.category === "일상" && todayKey(s.createdAt) === day)
-        .reduce((sum, s) => sum + s.awardedPoints, 0);
-      const remaining = Math.max(0, DAILY_CAP - sameDayTotal);
-      award = Math.min(mission.points, remaining);
-    } else {
-      award = sub.proposedPoints !== undefined ? sub.proposedPoints : (mission.points || 0);
+  async function approveSubmission(id){
+    try {
+      const res = await apiSend("POST", `/api/hygo/submissions/${id}/approve`, {});
+      if (res.capApplied){
+        toast(`일일 상한(15점) 적용으로 ${res.awardedPoints}점만 반영됐어요.`);
+      } else {
+        toast(`승인 완료! ${res.teamName}에 ${res.awardedPoints}점을 반영했어요.`);
+      }
+    } catch (err) {
+      toast(err.message, "error");
     }
-
-    sub.status = "approved";
-    sub.approvedAt = new Date().toISOString();
-    sub.awardedPoints = award;
-
-    team.points += award;
-    team.missionsCount += 1;
-    saveData();
-
-    if (mission.category === "일상" && award < mission.points){
-      toast(`일일 상한(${DAILY_CAP}점) 적용으로 ${award}점만 반영됐어요.`);
-    } else {
-      toast(`승인 완료! ${team.name}에 ${award}점을 반영했어요.`);
-    }
-    renderPendingList();
   }
-
-  function rejectSubmission(id){
-    const sub = data.submissions.find(s => s.id === id);
-    if (!sub || sub.status !== "pending") return;
-    sub.status = "rejected";
-    sub.rejectedAt = new Date().toISOString();
-    saveData();
-    toast("인증을 거절했어요.");
-    renderPendingList();
+  async function rejectSubmission(id){
+    try {
+      await apiSend("POST", `/api/hygo/submissions/${id}/reject`, {});
+      toast("인증을 거절했어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   function populateAdjustTeamSelect(){
     const sel = document.getElementById("adjustTeamSelect");
+    const prev = sel.value;
     sel.innerHTML = data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+    if (data.teams.some(t => String(t.id) === prev)) sel.value = prev;
   }
 
-  function applyManualAdjustment(){
+  async function applyManualAdjustment(){
     const teamId = Number(document.getElementById("adjustTeamSelect").value);
     const delta = Number(document.getElementById("adjustPoints").value);
     const reason = document.getElementById("adjustReason").value.trim();
@@ -641,29 +708,83 @@
       toast("조정할 점수를 입력해주세요.", "error");
       return;
     }
-    const team = data.teams.find(t => t.id === teamId);
-    team.points += delta;
-    data.adjustments.push({ id: uid(), teamId, delta, reason, date: new Date().toISOString() });
-    saveData();
-    toast(`${team.name}에 ${delta > 0 ? "+" : ""}${delta}점을 반영했어요.`);
-    document.getElementById("adjustPoints").value = "";
-    document.getElementById("adjustReason").value = "";
+    try {
+      const res = await apiSend("POST", "/api/hygo/adjustments", { teamId, delta, reason });
+      toast(`${res.teamName}에 ${delta > 0 ? "+" : ""}${delta}점을 반영했어요.`);
+      document.getElementById("adjustPoints").value = "";
+      document.getElementById("adjustReason").value = "";
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
-  function adminLogin(){
+  function renderTeamManageList(){
+    document.getElementById("teamCount").textContent = data.teams.length;
+    const el = document.getElementById("teamManageList");
+    const sorted = [...data.teams].sort((a, b) => a.id - b.id);
+    el.innerHTML = sorted.map(t => `
+      <div class="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2 border border-white/5">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-white truncate">${escapeHtml(t.name)}</p>
+          <p class="text-[10px] text-slate-500">${t.points}점 · 미션 ${t.missionsCount}개</p>
+        </div>
+        <button data-remove-team="${t.id}" ${data.teams.length <= 1 ? "disabled" : ""} class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition disabled:opacity-30 disabled:cursor-not-allowed">삭제</button>
+      </div>`).join("");
+    el.querySelectorAll("[data-remove-team]").forEach(btn => btn.addEventListener("click", () => removeTeam(Number(btn.dataset.removeTeam))));
+  }
+
+  async function addTeam(){
+    const nameInput = document.getElementById("newTeamName");
+    try {
+      const res = await apiSend("POST", "/api/hygo/teams", { name: nameInput.value.trim() });
+      toast(`${res.team.name}이(가) 추가됐어요.`);
+      nameInput.value = "";
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  async function removeTeam(id){
+    const team = data.teams.find(t => t.id === id);
+    if (!team) return;
+    if (!confirm(`${team.name}을(를) 삭제할까요? 해당 팀의 인증 내역도 함께 삭제되며 되돌릴 수 없어요.`)) return;
+    try {
+      await apiSend("DELETE", `/api/hygo/teams/${id}`);
+      toast(`${team.name}이(가) 삭제됐어요.`);
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function resetAllData(){
+    if (!confirm("정말 모든 팀 점수와 인증 내역을 초기화할까요? 되돌릴 수 없어요.")) return;
+    try {
+      await apiSend("POST", "/api/hygo/reset", {});
+      toast("데이터가 초기화됐어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function adminLogin(){
     const input = document.getElementById("adminPassword");
     const err = document.getElementById("adminLoginError");
-    if (input.value === ADMIN_PASSWORD){
+    const pw = input.value;
+    try {
+      await apiSend("POST", "/api/hygo/admin/login", { password: pw });
+      adminPw = pw;
+      sessionStorage.setItem("hygoAdminPw", pw);
       isAdmin = true;
       err.classList.add("hidden");
       input.value = "";
       renderAdmin();
-    } else {
+    } catch (e) {
       err.classList.remove("hidden");
     }
   }
   function adminLogout(){
     isAdmin = false;
+    adminPw = null;
+    sessionStorage.removeItem("hygoAdminPw");
     renderAdmin();
   }
 
@@ -676,9 +797,7 @@
   }
 
   // ---------- init ----------
-  function init(){
-    ensureData();
-
+  async function init(){
     document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
     document.getElementById("missionSelect").addEventListener("change", toggleSurpriseField);
@@ -692,12 +811,21 @@
     document.getElementById("adminPassword").addEventListener("keydown", e => { if (e.key === "Enter") adminLogin(); });
     document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
     document.getElementById("adjustApplyBtn").addEventListener("click", applyManualAdjustment);
+    document.getElementById("addTeamBtn").addEventListener("click", addTeam);
+    document.getElementById("resetDataBtn").addEventListener("click", resetAllData);
 
-    populateTeamSelect();
-    populateMissionSelect();
-    renderLeaderboard();
     tickClock();
     setInterval(tickClock, 30000);
+
+    try {
+      data = await apiGet("/api/hygo/state");
+    } catch (e) {
+      toast("서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요.", "error");
+    }
+    await tryAutoLogin();
+    populateTeamSelect();
+    populateMissionSelect();
+    renderAll();
   }
 
   document.addEventListener("DOMContentLoaded", init);
