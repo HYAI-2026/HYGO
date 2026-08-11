@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>HY-GO | HYAI 네트워킹 프로그램</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base: { 900: '#0a0a14', 800: '#0f0f1e', 700: '#151528' },
+        },
+        boxShadow: {
+          glow: '0 0 40px -10px rgba(129,140,248,0.35)',
+        },
+        keyframes: {
+          fadeIn: { '0%': { opacity: 0, transform: 'translateY(6px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+          popIn: { '0%': { opacity: 0, transform: 'scale(.95)' }, '100%': { opacity: 1, transform: 'scale(1)' } },
+        },
+        animation: {
+          fadeIn: 'fadeIn .35s ease-out both',
+          popIn: 'popIn .2s ease-out both',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body {
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,0.20), transparent 60%),
+                radial-gradient(1000px 500px at 100% 0%, rgba(168,85,247,0.16), transparent 55%),
+                radial-gradient(800px 500px at 50% 100%, rgba(59,130,246,0.14), transparent 55%),
+                #08080f;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(129,140,248,0.35); border-radius: 999px; }
+  .glass {
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+  }
+  .tab-btn.active {
+    color: #fff;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    box-shadow: 0 8px 20px -6px rgba(99,102,241,0.55);
+  }
+  .rank-1 { background: linear-gradient(135deg, rgba(250,204,21,0.16), rgba(255,255,255,0.03)); border-color: rgba(250,204,21,0.45) !important; }
+  .rank-2 { background: linear-gradient(135deg, rgba(203,213,225,0.14), rgba(255,255,255,0.03)); border-color: rgba(203,213,225,0.4) !important; }
+  .rank-3 { background: linear-gradient(135deg, rgba(217,119,6,0.16), rgba(255,255,255,0.03)); border-color: rgba(217,119,6,0.4) !important; }
+  input[type="file"]::file-selector-button {
+    background: rgba(99,102,241,0.2);
+    border: 1px solid rgba(99,102,241,0.4);
+    color: #c7d2fe;
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin-right: 12px;
+    cursor: pointer;
+  }
+  input[type="file"]::file-selector-button:hover { background: rgba(99,102,241,0.32); }
+  select option { background-color: #12121f; color: #fff; }
+  .modal-backdrop { background: rgba(3,3,10,0.72); backdrop-filter: blur(4px); }
+</style>
+</head>
+<body class="min-h-screen text-slate-200 font-sans pb-24">
+
+<!-- Toast -->
+<div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] hidden px-4 py-3 rounded-xl text-sm font-medium shadow-glow animate-fadeIn"></div>
+
+<!-- Header -->
+<header class="sticky top-0 z-40 glass border-b border-white/10">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-lg shadow-glow">🚀</div>
+      <div>
+        <h1 class="text-base sm:text-lg font-extrabold tracking-tight bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent leading-none">HY-GO</h1>
+        <p class="text-[11px] text-slate-400 leading-none mt-0.5">HYAI 네트워킹 프로그램</p>
+      </div>
+    </div>
+    <div class="text-[11px] text-slate-500 hidden sm:block" id="headerClock"></div>
+  </div>
+
+  <!-- Tabs -->
+  <nav class="max-w-5xl mx-auto px-2 sm:px-4 pb-2">
+    <div class="grid grid-cols-4 gap-1.5 sm:gap-2">
+      <button data-tab="leaderboard" class="tab-btn active flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-semibold py-2 rounded-xl text-slate-300 hover:bg-white/5 transition">
+        <span>🏆</span><span>리더보드</span>
+      </button>
+      <button data-tab="submit" class="tab-btn flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-semibold py-2 rounded-xl text-slate-300 hover:bg-white/5 transition">
+        <span>📸</span><span>미션 인증</span>
+      </button>
+      <button data-tab="feed" class="tab-btn flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-semibold py-2 rounded-xl text-slate-300 hover:bg-white/5 transition">
+        <span>📢</span><span>인증 피드</span>
+      </button>
+      <button data-tab="admin" class="tab-btn flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-[11px] sm:text-sm font-semibold py-2 rounded-xl text-slate-300 hover:bg-white/5 transition">
+        <span>🔒</span><span>관리자</span>
+      </button>
+    </div>
+  </nav>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 pt-5">
+
+  <!-- ================= LEADERBOARD ================= -->
+  <section id="tab-leaderboard" class="space-y-3 animate-fadeIn">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-bold text-white">🏆 실시간 리더보드</h2>
+      <span class="text-[11px] text-slate-500">팀을 클릭하면 미션 내역을 볼 수 있어요</span>
+    </div>
+    <div id="leaderboardList" class="space-y-2.5"></div>
+  </section>
+
+  <!-- ================= SUBMIT ================= -->
+  <section id="tab-submit" class="hidden space-y-4 animate-fadeIn">
+    <h2 class="text-lg font-bold text-white">📸 미션 인증하기</h2>
+    <form id="submitForm" class="glass rounded-2xl p-4 sm:p-5 space-y-4">
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">팀 선택</label>
+        <select id="teamSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">미션 유형</label>
+        <select id="missionSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+      </div>
+
+      <div id="surprisePointsWrap" class="hidden">
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">돌발 미션 배점 (관리자 공지 점수를 입력하세요)</label>
+        <input id="surprisePoints" type="number" min="1" step="1" value="10" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">참여 인원 <span class="text-slate-500 font-normal">(최소 3명)</span></label>
+        <input id="participantCount" type="number" min="1" step="1" value="3" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">한 줄 메모 / 참가자 이름</label>
+        <input id="memoInput" type="text" maxlength="80" placeholder="예: 김하이, 이인공, 박지능 - 저녁에 삼겹살 완食" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">인증 사진</label>
+        <input id="photoInput" type="file" accept="image/*" required class="w-full text-xs text-slate-400 bg-black/30 border border-white/10 rounded-xl px-2 py-2">
+        <div id="photoPreviewWrap" class="hidden mt-3">
+          <img id="photoPreview" class="w-full max-h-64 object-cover rounded-xl border border-white/10">
+        </div>
+      </div>
+
+      <button type="submit" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition shadow-glow">
+        인증 제출하기
+      </button>
+      <p class="text-[11px] text-center text-slate-500">제출한 인증은 관리자 검수 후 리더보드에 반영됩니다.</p>
+    </form>
+  </section>
+
+  <!-- ================= FEED ================= -->
+  <section id="tab-feed" class="hidden space-y-3 animate-fadeIn">
+    <h2 class="text-lg font-bold text-white">📢 최신 인증 피드</h2>
+    <div id="feedList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+  </section>
+
+  <!-- ================= ADMIN ================= -->
+  <section id="tab-admin" class="hidden space-y-4 animate-fadeIn">
+    <div id="adminLoginBox" class="glass rounded-2xl p-6 max-w-sm mx-auto text-center space-y-3">
+      <div class="text-3xl">🔒</div>
+      <h2 class="text-base font-bold text-white">관리자 인증</h2>
+      <p class="text-xs text-slate-500">기획진 전용 페이지입니다. 암호를 입력하세요.</p>
+      <input id="adminPassword" type="password" placeholder="암호 입력" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <button id="adminLoginBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition">입장하기</button>
+      <p id="adminLoginError" class="hidden text-xs text-rose-400">암호가 올바르지 않습니다.</p>
+    </div>
+
+    <div id="adminPanel" class="hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-white">🔒 관리자 페이지</h2>
+        <button id="adminLogoutBtn" class="text-xs text-slate-400 hover:text-white underline">로그아웃</button>
+      </div>
+
+      <div>
+        <h3 class="text-sm font-bold text-slate-300 mb-2">⏳ 대기 중인 인증 (<span id="pendingCount">0</span>)</h3>
+        <div id="pendingList" class="space-y-3"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <h3 class="text-sm font-bold text-slate-300">⚙️ 수동 포인트 조정</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+          <select id="adjustTeamSelect" class="sm:col-span-2 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+          <input id="adjustPoints" type="number" step="1" placeholder="예: 5 또는 -5" class="bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <button id="adjustApplyBtn" class="py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 transition">적용</button>
+        </div>
+        <input id="adjustReason" type="text" maxlength="60" placeholder="조정 사유 (선택)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Team History Modal -->
+<div id="historyModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div class="glass w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[85vh] flex flex-col animate-popIn">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
+      <h3 id="historyModalTitle" class="font-bold text-white">팀 미션 내역</h3>
+      <button id="historyModalClose" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div id="historyModalBody" class="overflow-y-auto px-5 py-4 space-y-3"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "hygoData_v1";
+  const ADMIN_PASSWORD = "hyai1234";
+  const DAILY_CAP = 15;
+
+  const MISSIONS = [
+    { key: "drink",    category: "일상", emoji: "🍺", label: "술 마시기",       points: 10 },
+    { key: "meal",     category: "일상", emoji: "🍚", label: "밥 먹기",         points: 5 },
+    { key: "cafe",     category: "일상", emoji: "☕", label: "카페 가기",       points: 5 },
+    { key: "karaoke",  category: "일상", emoji: "🎤", label: "노래방 가기",     points: 5 },
+    { key: "study",    category: "일상", emoji: "📚", label: "공부/코딩하기",   points: 5 },
+    { key: "photo",    category: "일상", emoji: "📸", label: "인증샷 찍기",     points: 3 },
+    { key: "surprise", category: "돌발", emoji: "🎯", label: "주차별 돌발 미션", points: null },
+  ];
+  const missionByKey = k => MISSIONS.find(m => m.key === k);
+
+  let isAdmin = false;
+  let data = null;
+
+  // ---------- utils ----------
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const todayKey = iso => iso.slice(0, 10);
+  const fmtDate = iso => {
+    const d = new Date(iso);
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  };
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  function toast(msg, type){
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = "fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl text-sm font-medium shadow-glow animate-fadeIn " +
+      (type === "error" ? "bg-rose-500/90 text-white" : "bg-emerald-500/90 text-white");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
+  }
+
+  function placeholderPhoto(emoji, seedNum){
+    const hues = [245, 265, 285, 200, 320, 165];
+    const h = hues[seedNum % hues.length];
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'>
+      <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
+        <stop offset='0%' stop-color='hsl(${h},70%,45%)'/>
+        <stop offset='100%' stop-color='hsl(${h+40},70%,30%)'/>
+      </linearGradient></defs>
+      <rect width='400' height='300' fill='url(#g)'/>
+      <text x='50%' y='54%' font-size='90' text-anchor='middle' dominant-baseline='middle'>${emoji}</text>
+    </svg>`;
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  }
+
+  // ---------- storage ----------
+  function loadData(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch(e){ console.warn("failed to parse stored data", e); }
+    return null;
+  }
+  function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+  function seedData(){
+    const teams = [];
+    for (let i = 1; i <= 8; i++) teams.push({ id: i, name: `${i}팀`, points: 0, missionsCount: 0 });
+
+    const now = Date.now();
+    const daysAgo = n => new Date(now - n * 86400000).toISOString();
+
+    const submissions = [];
+    function addApproved(teamId, missionKey, participants, memo, daysBack, awarded){
+      const m = missionByKey(missionKey);
+      const createdAt = daysAgo(daysBack);
+      submissions.push({
+        id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
+        participants, memo, photo: placeholderPhoto(m.emoji, teamId + submissions.length),
+        status: "approved", createdAt, approvedAt: createdAt,
+        awardedPoints: awarded !== undefined ? awarded : m.points,
+      });
+    }
+
+    addApproved(1, "drink", 5, "OT 뒤풀이 삼겹살집에서!", 3, 10);
+    addApproved(1, "study", 4, "알고리즘 스터디 완료", 2, 5);
+    addApproved(1, "cafe", 3, "팀플 회의 겸 카페", 1, 5);
+    addApproved(1, "photo", 6, "단체 인증샷", 1, 3);
+
+    addApproved(2, "meal", 4, "학식 같이 먹기", 2, 5);
+    addApproved(2, "karaoke", 5, "노래방 2시간", 2, 5);
+    addApproved(2, "surprise", 6, "1주차 돌발미션: 교수님과 셀카", 1, 15);
+
+    addApproved(3, "drink", 4, "치맥 모임", 3, 10);
+    addApproved(3, "cafe", 3, "스터디카페 방문", 1, 5);
+
+    addApproved(4, "study", 3, "코딩테스트 스터디", 2, 5);
+    addApproved(4, "photo", 3, "실습실 인증샷", 1, 3);
+
+    // a couple pending items for admin demo
+    submissions.push({
+      id: uid(), teamId: 5, missionKey: "meal", category: "일상", label: "밥 먹기", emoji: "🍚",
+      participants: 3, memo: "저녁 같이 먹었어요", photo: placeholderPhoto("🍚", 50),
+      status: "pending", createdAt: new Date().toISOString(),
+    });
+    submissions.push({
+      id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
+      participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
+      status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15,
+    });
+
+    const adjustments = [];
+
+    // recompute team totals from seeded approved submissions
+    submissions.filter(s => s.status === "approved").forEach(s => {
+      const t = teams.find(t => t.id === s.teamId);
+      t.points += s.awardedPoints;
+      t.missionsCount += 1;
+    });
+
+    data = { teams, submissions, adjustments };
+    saveData();
+  }
+
+  function ensureData(){
+    data = loadData();
+    if (!data) seedData();
+  }
+
+  // ---------- tabs ----------
+  function switchTab(name){
+    document.querySelectorAll("[id^='tab-']").forEach(sec => sec.classList.add("hidden"));
+    document.getElementById(`tab-${name}`).classList.remove("hidden");
+    document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === name));
+    if (name === "leaderboard") renderLeaderboard();
+    if (name === "submit") { populateTeamSelect(); populateMissionSelect(); }
+    if (name === "feed") renderFeed();
+    if (name === "admin") renderAdmin();
+  }
+
+  // ---------- leaderboard ----------
+  function renderLeaderboard(){
+    const el = document.getElementById("leaderboardList");
+    const sorted = [...data.teams].sort((a, b) => b.points - a.points || a.id - b.id);
+    const medal = ["👑", "🥈", "🥉"];
+    const rankClass = ["rank-1", "rank-2", "rank-3"];
+
+    el.innerHTML = sorted.map((team, idx) => {
+      const rank = idx + 1;
+      const isTop3 = idx < 3;
+      return `
+      <button data-team="${team.id}" class="team-row w-full text-left glass ${isTop3 ? rankClass[idx] : ""} rounded-2xl px-4 py-3.5 flex items-center gap-3.5 hover:scale-[1.01] hover:border-indigo-400/40 transition">
+        <div class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-lg font-extrabold ${isTop3 ? "bg-white/10" : "bg-black/30 text-slate-400"}">
+          ${isTop3 ? medal[idx] : rank}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="font-bold text-white truncate">${escapeHtml(team.name)}</p>
+          <p class="text-[11px] text-slate-500">달성 미션 ${team.missionsCount}개</p>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="text-lg font-extrabold bg-gradient-to-r from-indigo-300 to-fuchsia-300 bg-clip-text text-transparent">${team.points}</p>
+          <p class="text-[10px] text-slate-500">POINTS</p>
+        </div>
+      </button>`;
+    }).join("");
+
+    el.querySelectorAll(".team-row").forEach(btn => {
+      btn.addEventListener("click", () => openTeamHistory(Number(btn.dataset.team)));
+    });
+  }
+
+  function openTeamHistory(teamId){
+    const team = data.teams.find(t => t.id === teamId);
+    document.getElementById("historyModalTitle").textContent = `${team.name} 미션 내역`;
+    const body = document.getElementById("historyModalBody");
+
+    const items = [
+      ...data.submissions.filter(s => s.teamId === teamId && s.status === "approved").map(s => ({ type: "mission", date: s.approvedAt || s.createdAt, s })),
+      ...data.adjustments.filter(a => a.teamId === teamId).map(a => ({ type: "adjust", date: a.date, a })),
+    ].sort((x, y) => new Date(y.date) - new Date(x.date));
+
+    if (!items.length){
+      body.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">아직 승인된 인증 내역이 없어요.</p>`;
+    } else {
+      body.innerHTML = items.map(item => {
+        if (item.type === "mission"){
+          const s = item.s;
+          return `
+          <div class="flex gap-3 items-start bg-black/20 rounded-xl p-2.5 border border-white/5">
+            <img src="${s.photo}" class="w-14 h-14 rounded-lg object-cover shrink-0 border border-white/10">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-semibold text-white truncate">${s.emoji} ${escapeHtml(s.label)}</p>
+                <span class="text-xs font-bold text-emerald-400 shrink-0">+${s.awardedPoints}</span>
+              </div>
+              <p class="text-[11px] text-slate-400 truncate">${escapeHtml(s.memo || "")}</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">참여 ${s.participants}명 · ${fmtDate(item.date)}</p>
+            </div>
+          </div>`;
+        } else {
+          const a = item.a;
+          const positive = a.delta >= 0;
+          return `
+          <div class="flex items-center justify-between bg-black/20 rounded-xl p-3 border border-white/5">
+            <div>
+              <p class="text-sm font-semibold text-white">⚙️ 관리자 수동 조정</p>
+              <p class="text-[11px] text-slate-500">${escapeHtml(a.reason || "사유 없음")} · ${fmtDate(a.date)}</p>
+            </div>
+            <span class="text-sm font-bold ${positive ? "text-emerald-400" : "text-rose-400"}">${positive ? "+" : ""}${a.delta}</span>
+          </div>`;
+        }
+      }).join("");
+    }
+    document.getElementById("historyModal").classList.remove("hidden");
+  }
+  function closeHistoryModal(){ document.getElementById("historyModal").classList.add("hidden"); }
+
+  // ---------- submit form ----------
+  function populateTeamSelect(){
+    const sel = document.getElementById("teamSelect");
+    sel.innerHTML = data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  }
+  function populateMissionSelect(){
+    const sel = document.getElementById("missionSelect");
+    const groups = { "일상": [], "돌발": [] };
+    MISSIONS.forEach(m => groups[m.category].push(m));
+    sel.innerHTML = Object.entries(groups).map(([cat, list]) => `
+      <optgroup label="${cat === "일상" ? "🌤️ 일상 미션" : "🎯 돌발 미션"}">
+        ${list.map(m => `<option value="${m.key}">${m.emoji} ${m.label}${m.points ? ` (${m.points}점)` : " (배점 유동)"}</option>`).join("")}
+      </optgroup>`).join("");
+    toggleSurpriseField();
+  }
+  function toggleSurpriseField(){
+    const key = document.getElementById("missionSelect").value;
+    const wrap = document.getElementById("surprisePointsWrap");
+    wrap.classList.toggle("hidden", missionByKey(key)?.category !== "돌발");
+  }
+
+  function handlePhotoChange(e){
+    const file = e.target.files[0];
+    const wrap = document.getElementById("photoPreviewWrap");
+    const img = document.getElementById("photoPreview");
+    if (!file){ wrap.classList.add("hidden"); img.src = ""; return; }
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; wrap.classList.remove("hidden"); };
+    reader.readAsDataURL(file);
+  }
+
+  function handleSubmit(e){
+    e.preventDefault();
+    const teamId = Number(document.getElementById("teamSelect").value);
+    const missionKey = document.getElementById("missionSelect").value;
+    const mission = missionByKey(missionKey);
+    const participants = Number(document.getElementById("participantCount").value);
+    const memo = document.getElementById("memoInput").value.trim();
+    const photoImg = document.getElementById("photoPreview").src;
+    const hasPhoto = photoImg && photoImg.startsWith("data:");
+
+    if (participants < 3){
+      toast("참여 인원은 최소 3명 이상이어야 해요.", "error");
+      return;
+    }
+    if (!memo){
+      toast("한 줄 메모 또는 참가자 이름을 입력해주세요.", "error");
+      return;
+    }
+    if (!hasPhoto){
+      toast("인증 사진을 업로드해주세요.", "error");
+      return;
+    }
+
+    let proposedPoints;
+    if (mission.category === "돌발"){
+      proposedPoints = Number(document.getElementById("surprisePoints").value) || 0;
+      if (proposedPoints <= 0){
+        toast("돌발 미션 배점을 입력해주세요.", "error");
+        return;
+      }
+    }
+
+    const sub = {
+      id: uid(), teamId, missionKey, category: mission.category, label: mission.label, emoji: mission.emoji,
+      participants, memo, photo: photoImg,
+      status: "pending", createdAt: new Date().toISOString(),
+    };
+    if (proposedPoints !== undefined) sub.proposedPoints = proposedPoints;
+
+    data.submissions.push(sub);
+    saveData();
+
+    toast("인증이 제출되었어요! 관리자 검수를 기다려주세요 🙌");
+    e.target.reset();
+    document.getElementById("photoPreviewWrap").classList.add("hidden");
+    populateMissionSelect();
+  }
+
+  // ---------- feed ----------
+  function renderFeed(){
+    const el = document.getElementById("feedList");
+    const approved = data.submissions
+      .filter(s => s.status === "approved")
+      .sort((a, b) => new Date(b.approvedAt || b.createdAt) - new Date(a.approvedAt || a.createdAt));
+
+    if (!approved.length){
+      el.innerHTML = `<p class="col-span-full text-center text-sm text-slate-500 py-10">아직 승인된 인증이 없어요.</p>`;
+      return;
+    }
+
+    el.innerHTML = approved.map(s => {
+      const team = data.teams.find(t => t.id === s.teamId);
+      return `
+      <div class="glass rounded-2xl overflow-hidden animate-fadeIn">
+        <img src="${s.photo}" class="w-full h-48 object-cover">
+        <div class="p-3.5 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">${escapeHtml(team ? team.name : "?")}</span>
+            <span class="text-xs font-bold text-emerald-400">+${s.awardedPoints}p</span>
+          </div>
+          <p class="text-sm font-semibold text-white">${s.emoji} ${escapeHtml(s.label)}</p>
+          <p class="text-xs text-slate-400 line-clamp-2">${escapeHtml(s.memo || "")}</p>
+          <p class="text-[10px] text-slate-500">참여 ${s.participants}명 · ${fmtDate(s.approvedAt || s.createdAt)}</p>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // ---------- admin ----------
+  function renderAdmin(){
+    document.getElementById("adminLoginBox").classList.toggle("hidden", isAdmin);
+    document.getElementById("adminPanel").classList.toggle("hidden", !isAdmin);
+    if (!isAdmin) return;
+    renderPendingList();
+    populateAdjustTeamSelect();
+  }
+
+  function renderPendingList(){
+    const el = document.getElementById("pendingList");
+    const pending = data.submissions
+      .filter(s => s.status === "pending")
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    document.getElementById("pendingCount").textContent = pending.length;
+
+    if (!pending.length){
+      el.innerHTML = `<p class="text-center text-sm text-slate-500 py-8 glass rounded-2xl">대기 중인 인증이 없어요 ✨</p>`;
+      return;
+    }
+
+    el.innerHTML = pending.map(s => {
+      const team = data.teams.find(t => t.id === s.teamId);
+      const pts = s.proposedPoints !== undefined ? s.proposedPoints : missionByKey(s.missionKey).points;
+      return `
+      <div class="glass rounded-2xl p-3.5 flex flex-col sm:flex-row gap-3.5">
+        <img src="${s.photo}" class="w-full sm:w-28 h-40 sm:h-28 object-cover rounded-xl border border-white/10 shrink-0">
+        <div class="flex-1 min-w-0 space-y-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">${escapeHtml(team ? team.name : "?")}</span>
+            <span class="text-xs font-semibold text-slate-300">${s.emoji} ${escapeHtml(s.label)}</span>
+            <span class="text-xs font-bold text-amber-400">${pts}점</span>
+          </div>
+          <p class="text-sm text-slate-300 truncate">${escapeHtml(s.memo || "")}</p>
+          <p class="text-[11px] text-slate-500">참여 ${s.participants}명 · ${fmtDate(s.createdAt)}</p>
+          <div class="flex gap-2 pt-1.5">
+            <button data-approve="${s.id}" class="flex-1 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/30 transition">✅ 승인</button>
+            <button data-reject="${s.id}" class="flex-1 py-1.5 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30 hover:bg-rose-500/30 transition">❌ 거절</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    el.querySelectorAll("[data-approve]").forEach(btn => btn.addEventListener("click", () => approveSubmission(btn.dataset.approve)));
+    el.querySelectorAll("[data-reject]").forEach(btn => btn.addEventListener("click", () => rejectSubmission(btn.dataset.reject)));
+  }
+
+  function approveSubmission(id){
+    const sub = data.submissions.find(s => s.id === id);
+    if (!sub || sub.status !== "pending") return;
+    const team = data.teams.find(t => t.id === sub.teamId);
+    const mission = missionByKey(sub.missionKey);
+
+    let award;
+    if (mission.category === "일상"){
+      const day = todayKey(sub.createdAt);
+      const sameDayTotal = data.submissions
+        .filter(s => s.teamId === sub.teamId && s.status === "approved" && s.category === "일상" && todayKey(s.createdAt) === day)
+        .reduce((sum, s) => sum + s.awardedPoints, 0);
+      const remaining = Math.max(0, DAILY_CAP - sameDayTotal);
+      award = Math.min(mission.points, remaining);
+    } else {
+      award = sub.proposedPoints !== undefined ? sub.proposedPoints : (mission.points || 0);
+    }
+
+    sub.status = "approved";
+    sub.approvedAt = new Date().toISOString();
+    sub.awardedPoints = award;
+
+    team.points += award;
+    team.missionsCount += 1;
+    saveData();
+
+    if (mission.category === "일상" && award < mission.points){
+      toast(`일일 상한(${DAILY_CAP}점) 적용으로 ${award}점만 반영됐어요.`);
+    } else {
+      toast(`승인 완료! ${team.name}에 ${award}점을 반영했어요.`);
+    }
+    renderPendingList();
+  }
+
+  function rejectSubmission(id){
+    const sub = data.submissions.find(s => s.id === id);
+    if (!sub || sub.status !== "pending") return;
+    sub.status = "rejected";
+    sub.rejectedAt = new Date().toISOString();
+    saveData();
+    toast("인증을 거절했어요.");
+    renderPendingList();
+  }
+
+  function populateAdjustTeamSelect(){
+    const sel = document.getElementById("adjustTeamSelect");
+    sel.innerHTML = data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  }
+
+  function applyManualAdjustment(){
+    const teamId = Number(document.getElementById("adjustTeamSelect").value);
+    const delta = Number(document.getElementById("adjustPoints").value);
+    const reason = document.getElementById("adjustReason").value.trim();
+    if (!delta){
+      toast("조정할 점수를 입력해주세요.", "error");
+      return;
+    }
+    const team = data.teams.find(t => t.id === teamId);
+    team.points += delta;
+    data.adjustments.push({ id: uid(), teamId, delta, reason, date: new Date().toISOString() });
+    saveData();
+    toast(`${team.name}에 ${delta > 0 ? "+" : ""}${delta}점을 반영했어요.`);
+    document.getElementById("adjustPoints").value = "";
+    document.getElementById("adjustReason").value = "";
+  }
+
+  function adminLogin(){
+    const input = document.getElementById("adminPassword");
+    const err = document.getElementById("adminLoginError");
+    if (input.value === ADMIN_PASSWORD){
+      isAdmin = true;
+      err.classList.add("hidden");
+      input.value = "";
+      renderAdmin();
+    } else {
+      err.classList.remove("hidden");
+    }
+  }
+  function adminLogout(){
+    isAdmin = false;
+    renderAdmin();
+  }
+
+  // ---------- clock ----------
+  function tickClock(){
+    const el = document.getElementById("headerClock");
+    const d = new Date();
+    el.textContent = d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" }) + " · " +
+      d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // ---------- init ----------
+  function init(){
+    ensureData();
+
+    document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+
+    document.getElementById("missionSelect").addEventListener("change", toggleSurpriseField);
+    document.getElementById("photoInput").addEventListener("change", handlePhotoChange);
+    document.getElementById("submitForm").addEventListener("submit", handleSubmit);
+
+    document.getElementById("historyModalClose").addEventListener("click", closeHistoryModal);
+    document.getElementById("historyModal").addEventListener("click", e => { if (e.target.id === "historyModal") closeHistoryModal(); });
+
+    document.getElementById("adminLoginBtn").addEventListener("click", adminLogin);
+    document.getElementById("adminPassword").addEventListener("keydown", e => { if (e.key === "Enter") adminLogin(); });
+    document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
+    document.getElementById("adjustApplyBtn").addEventListener("click", applyManualAdjustment);
+
+    populateTeamSelect();
+    populateMissionSelect();
+    renderLeaderboard();
+    tickClock();
+    setInterval(tickClock, 30000);
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>
+</body>
+</html>
