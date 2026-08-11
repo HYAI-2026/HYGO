@@ -106,7 +106,7 @@
           <line x1="132" y1="100" x2="100" y2="132"/>
           <line x1="132" y1="100" x2="132" y2="132"/>
         </g>
-        <g fill="#f3e8f0" stroke="#5b3a29" stroke-width="2.4">
+        <g fill="#ffffff" stroke="#5b3a29" stroke-width="2.4">
           <circle cx="68" cy="68" r="12.5"/>
           <circle cx="100" cy="68" r="12.5"/>
           <circle cx="132" cy="68" r="12.5"/>
@@ -256,10 +256,39 @@
         <div id="teamManageList" class="space-y-1.5 max-h-56 overflow-y-auto"></div>
       </div>
 
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <h3 class="text-sm font-bold text-slate-300">🗓️ 하이고 일정</h3>
+        <p class="text-[11px] text-slate-500">팀 캘린더 탭에 표시되는 미션 인증 기간이에요. 이 기간 안의 날짜만 캘린더에서 선택할 수 있어요.</p>
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">시작일</label>
+            <input id="campaignStartInput" type="date" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">종료일</label>
+            <input id="campaignEndInput" type="date" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          </div>
+        </div>
+        <button id="campaignApplyBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition">일정 적용</button>
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <h3 class="text-sm font-bold text-slate-300">💾 데이터 백업</h3>
+        <p class="text-[11px] text-slate-500">전체 팀·인증 데이터를 파일로 내려받아 보관하세요. 데이터가 사라져도 이 파일로 복원할 수 있어요.</p>
+        <div class="grid grid-cols-2 gap-2.5">
+          <button id="backupDownloadBtn" class="py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">⬇️ 백업 다운로드</button>
+          <label class="py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition text-center cursor-pointer">
+            ⬆️ 백업 복원
+            <input id="backupRestoreInput" type="file" accept="application/json" class="hidden">
+          </label>
+        </div>
+      </div>
+
       <div class="glass rounded-2xl p-4 sm:p-5 space-y-2 border border-rose-500/30">
         <h3 class="text-sm font-bold text-rose-300">⚠️ 데이터 초기화</h3>
-        <p class="text-[11px] text-slate-500">모든 팀 점수와 인증 내역이 삭제되고 샘플 데이터로 초기화됩니다. 되돌릴 수 없어요.</p>
-        <button id="resetDataBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-rose-500/20 text-rose-300 border border-rose-400/40 hover:bg-rose-500/30 transition">전체 데이터 초기화</button>
+        <p class="text-[11px] text-slate-500">아래 두 버튼은 되돌릴 수 없어요. 실행 전 백업 다운로드를 권장해요.</p>
+        <button id="resetZeroBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-rose-500/20 text-rose-300 border border-rose-400/40 hover:bg-rose-500/30 transition">전체 0점으로 초기화 (팀은 유지)</button>
+        <button id="resetSampleBtn" class="w-full py-2 rounded-xl font-semibold text-xs bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 transition">샘플 데이터로 초기화 (테스트용)</button>
       </div>
     </div>
   </section>
@@ -280,6 +309,20 @@
   </div>
 </div>
 
+<!-- Confirm Modal -->
+<div id="confirmModal" class="hidden fixed inset-0 z-[60] modal-backdrop flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
+    <div>
+      <h3 id="confirmModalTitle" class="font-bold text-white">확인</h3>
+      <p id="confirmModalMessage" class="text-sm text-slate-400 mt-1.5 leading-relaxed"></p>
+    </div>
+    <div class="flex gap-2.5">
+      <button id="confirmModalCancel" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">취소</button>
+      <button id="confirmModalOk" class="flex-1 py-2.5 rounded-xl font-bold text-sm transition">확인</button>
+    </div>
+  </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (function(){
@@ -296,13 +339,11 @@
   ];
   const missionByKey = k => MISSIONS.find(m => m.key === k);
 
-  const CAMPAIGN_START = "2026-09-21";
-  const CAMPAIGN_END = "2026-10-30";
-  const CAMPAIGN_MONTHS = [[2026, 8], [2026, 9]]; // 0-based: 8=Sep, 9=Oct
+  const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
   const DAILY_CASUAL_CAP = 15;
   const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
-  let data = { teams: [], submissions: [], adjustments: [] };
+  let data = { teams: [], submissions: [], adjustments: [], campaign: DEFAULT_CAMPAIGN };
   let isAdmin = false;
   let adminPw = sessionStorage.getItem("hygoAdminPw") || null;
   let currentHistoryTeamId = null;
@@ -326,6 +367,49 @@
       (type === "error" ? "bg-rose-500/90 text-white" : "bg-emerald-500/90 text-white");
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.add("hidden"), 2800);
+  }
+
+  function confirmModal(message, opts){
+    opts = opts || {};
+    return new Promise(resolve => {
+      document.getElementById("confirmModalTitle").textContent = opts.title || "확인";
+      document.getElementById("confirmModalMessage").textContent = message;
+      const okBtn = document.getElementById("confirmModalOk");
+      const cancelBtn = document.getElementById("confirmModalCancel");
+      okBtn.textContent = opts.okText || "확인";
+      okBtn.className = "flex-1 py-2.5 rounded-xl font-bold text-sm transition " +
+        (opts.danger ? "bg-rose-500 hover:bg-rose-400 text-white" : "bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 text-white");
+      document.getElementById("confirmModal").classList.remove("hidden");
+
+      function cleanup(result){
+        document.getElementById("confirmModal").classList.add("hidden");
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        resolve(result);
+      }
+      function onOk(){ cleanup(true); }
+      function onCancel(){ cleanup(false); }
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+    });
+  }
+
+  function getCampaign(){
+    return (data.campaign && data.campaign.start && data.campaign.end) ? data.campaign : DEFAULT_CAMPAIGN;
+  }
+  function getCampaignMonths(){
+    const { start, end } = getCampaign();
+    const startD = new Date(start + "T00:00:00");
+    const endD = new Date(end + "T00:00:00");
+    const months = [];
+    let y = startD.getFullYear(), m = startD.getMonth();
+    let guard = 0;
+    while ((y < endD.getFullYear() || (y === endD.getFullYear() && m <= endD.getMonth())) && guard < 12){
+      months.push([y, m]);
+      m++; if (m > 11){ m = 0; y++; }
+      guard++;
+    }
+    return months;
   }
 
   // ---------- api ----------
@@ -428,7 +512,7 @@
   }
 
   const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  const inCampaign = key => key >= CAMPAIGN_START && key <= CAMPAIGN_END;
+  const inCampaign = key => { const c = getCampaign(); return key >= c.start && key <= c.end; };
   const formatDotDate = key => key.replace(/-/g, ".");
 
   function buildDayMap(teamId){
@@ -539,15 +623,16 @@
   function renderTeamHistory(teamId){
     const team = data.teams.find(t => t.id === teamId);
     if (!team){ closeHistoryModal(); return; }
+    const c = getCampaign();
     document.getElementById("historyModalTitle").textContent = `${team.name} 미션 캘린더`;
     document.getElementById("historyModalSubtitle").textContent =
-      `누적 ${team.points}점 · 미션 ${team.missionsCount}개 · ${formatDotDate(CAMPAIGN_START)} ~ ${formatDotDate(CAMPAIGN_END)}`;
+      `누적 ${team.points}점 · 미션 ${team.missionsCount}개 · ${formatDotDate(c.start)} ~ ${formatDotDate(c.end)}`;
 
     const dayMap = buildDayMap(teamId);
     const body = document.getElementById("historyModalBody");
     body.innerHTML = `
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        ${CAMPAIGN_MONTHS.map(([y, m]) => renderMonthCalendar(y, m, dayMap)).join("")}
+        ${getCampaignMonths().map(([y, m]) => renderMonthCalendar(y, m, dayMap)).join("")}
       </div>
       <div class="flex items-center justify-end gap-1.5 text-[10px] text-slate-500">
         <span>적음</span>
@@ -693,6 +778,28 @@
   }
 
   // ---------- feed ----------
+  function sanitizeFilename(s){
+    return String(s).replace(/[\\/:*?"<>|]/g, "_");
+  }
+  function downloadPhoto(dataUrl, filename){
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  async function deleteFeedItem(id){
+    const ok = await confirmModal("이 인증 게시물을 삭제할까요? 팀 점수에서도 해당 점수가 함께 차감되며 되돌릴 수 없어요.", { title: "인증 삭제", danger: true, okText: "삭제" });
+    if (!ok) return;
+    try {
+      await apiSend("DELETE", `/api/hygo/submissions/${id}`);
+      toast("삭제했어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
   function renderFeed(){
     const el = document.getElementById("feedList");
     const approved = data.submissions
@@ -706,9 +813,17 @@
 
     el.innerHTML = approved.map(s => {
       const team = data.teams.find(t => t.id === s.teamId);
+      const filename = sanitizeFilename(`${team ? team.name : "team"}_${s.label}_${dateKey(new Date(s.approvedAt || s.createdAt))}.jpg`);
       return `
       <div class="glass rounded-2xl overflow-hidden animate-fadeIn">
-        <img src="${s.photo}" class="w-full h-48 object-cover">
+        <div class="relative">
+          <img src="${s.photo}" class="w-full h-48 object-cover">
+          ${isAdmin ? `
+          <div class="absolute top-2 right-2 flex gap-1.5">
+            <button data-download="${s.id}" data-filename="${filename}" title="사진 다운로드" class="w-8 h-8 rounded-lg bg-black/60 backdrop-blur text-white flex items-center justify-center hover:bg-black/80 transition">⬇️</button>
+            <button data-delete-feed="${s.id}" title="삭제" class="w-8 h-8 rounded-lg bg-rose-500/80 backdrop-blur text-white flex items-center justify-center hover:bg-rose-500 transition">🗑️</button>
+          </div>` : ""}
+        </div>
         <div class="p-3.5 space-y-1.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">${escapeHtml(team ? team.name : "?")}</span>
@@ -720,6 +835,14 @@
         </div>
       </div>`;
     }).join("");
+
+    if (isAdmin){
+      el.querySelectorAll("[data-download]").forEach(btn => btn.addEventListener("click", () => {
+        const sub = data.submissions.find(s => s.id === btn.dataset.download);
+        if (sub) downloadPhoto(sub.photo, btn.dataset.filename);
+      }));
+      el.querySelectorAll("[data-delete-feed]").forEach(btn => btn.addEventListener("click", () => deleteFeedItem(btn.dataset.deleteFeed)));
+    }
   }
 
   // ---------- admin ----------
@@ -735,13 +858,21 @@
     }
   }
 
+  function populateCampaignInputs(){
+    const c = getCampaign();
+    document.getElementById("campaignStartInput").value = c.start;
+    document.getElementById("campaignEndInput").value = c.end;
+  }
+
   function renderAdmin(){
     document.getElementById("adminLoginBox").classList.toggle("hidden", isAdmin);
     document.getElementById("adminPanel").classList.toggle("hidden", !isAdmin);
+    renderFeed();
     if (!isAdmin) return;
     renderPendingList();
     populateAdjustTeamSelect();
     renderTeamManageList();
+    populateCampaignInputs();
   }
 
   function renderPendingList(){
@@ -857,7 +988,8 @@
   async function removeTeam(id){
     const team = data.teams.find(t => t.id === id);
     if (!team) return;
-    if (!confirm(`${team.name}을(를) 삭제할까요? 해당 팀의 인증 내역도 함께 삭제되며 되돌릴 수 없어요.`)) return;
+    const ok = await confirmModal(`${team.name}을(를) 삭제할까요? 해당 팀의 인증 내역도 함께 삭제되며 되돌릴 수 없어요.`, { title: "팀 삭제", danger: true, okText: "삭제" });
+    if (!ok) return;
     try {
       await apiSend("DELETE", `/api/hygo/teams/${id}`);
       toast(`${team.name}이(가) 삭제됐어요.`);
@@ -866,13 +998,68 @@
     }
   }
 
-  async function resetAllData(){
-    if (!confirm("정말 모든 팀 점수와 인증 내역을 초기화할까요? 되돌릴 수 없어요.")) return;
+  async function resetToZero(){
+    const ok = await confirmModal("정말 모든 팀을 0점으로 초기화할까요? 모든 인증 내역과 수동 조정 기록이 삭제돼요. 팀 목록과 하이고 일정은 그대로 유지됩니다. 되돌릴 수 없어요.", { title: "전체 0점 초기화", danger: true, okText: "0점으로 초기화" });
+    if (!ok) return;
     try {
-      await apiSend("POST", "/api/hygo/reset", {});
-      toast("데이터가 초기화됐어요.");
+      await apiSend("POST", "/api/hygo/reset-zero", {});
+      toast("모든 팀이 0점으로 초기화됐어요.");
     } catch (err) {
       toast(err.message, "error");
+    }
+  }
+
+  async function resetSampleData(){
+    const ok = await confirmModal("정말 샘플(예시) 데이터로 초기화할까요? 지금까지의 실제 기록이 사라지고 테스트용 예시 데이터로 바뀌어요. 되돌릴 수 없어요.", { title: "샘플 데이터로 초기화", danger: true, okText: "초기화" });
+    if (!ok) return;
+    try {
+      await apiSend("POST", "/api/hygo/reset", {});
+      toast("샘플 데이터로 초기화됐어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function applyCampaign(){
+    const start = document.getElementById("campaignStartInput").value;
+    const end = document.getElementById("campaignEndInput").value;
+    if (!start || !end){ toast("시작일과 종료일을 모두 입력해주세요.", "error"); return; }
+    if (start > end){ toast("종료일이 시작일보다 빠를 수 없어요.", "error"); return; }
+    try {
+      await apiSend("POST", "/api/hygo/campaign", { start, end });
+      toast("하이고 일정이 적용됐어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  function downloadBackup(){
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hygo-backup-${dateKey(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("백업 파일을 다운로드했어요.");
+  }
+
+  async function handleBackupRestore(e){
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const ok = await confirmModal("현재 데이터를 이 백업 파일 내용으로 완전히 덮어쓸까요? 되돌릴 수 없어요.", { title: "백업 복원", danger: true, okText: "복원" });
+      if (!ok) return;
+      await apiSend("POST", "/api/hygo/import", parsed);
+      toast("백업을 복원했어요.");
+    } catch (err) {
+      toast(err.message || "백업 파일을 읽는 데 실패했어요.", "error");
+    } finally {
+      e.target.value = "";
     }
   }
 
@@ -923,7 +1110,11 @@
     document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
     document.getElementById("adjustApplyBtn").addEventListener("click", applyManualAdjustment);
     document.getElementById("addTeamBtn").addEventListener("click", addTeam);
-    document.getElementById("resetDataBtn").addEventListener("click", resetAllData);
+    document.getElementById("campaignApplyBtn").addEventListener("click", applyCampaign);
+    document.getElementById("backupDownloadBtn").addEventListener("click", downloadBackup);
+    document.getElementById("backupRestoreInput").addEventListener("change", handleBackupRestore);
+    document.getElementById("resetZeroBtn").addEventListener("click", resetToZero);
+    document.getElementById("resetSampleBtn").addEventListener("click", resetSampleData);
 
     tickClock();
     setInterval(tickClock, 30000);

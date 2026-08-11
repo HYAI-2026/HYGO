@@ -12,6 +12,7 @@ const { Server: SocketIOServer } = require("socket.io");
 const ADMIN_PASSWORD = process.env.HYGO_ADMIN_PASSWORD || "hyai0926";
 const DAILY_CASUAL_CAP = 15;
 const DATA_PATH = path.join(__dirname, "data", "hygo-data.json");
+const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
 
 const MISSIONS = [
     { key: "drink", category: "일상", emoji: "🍺", label: "술 마시기", points: 10 },
@@ -94,13 +95,17 @@ function seedData() {
         t.missionsCount += 1;
     });
 
-    return { teams, submissions, adjustments, nextTeamId: 9 };
+    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN } };
 }
 
 function loadData() {
     if (fs.existsSync(DATA_PATH)) {
         try {
-            return JSON.parse(fs.readFileSync(DATA_PATH, "utf-8"));
+            const parsed = JSON.parse(fs.readFileSync(DATA_PATH, "utf-8"));
+            if (!parsed.campaign || !parsed.campaign.start || !parsed.campaign.end) {
+                parsed.campaign = { ...DEFAULT_CAMPAIGN };
+            }
+            return parsed;
         } catch (e) {
             console.warn("[hygo] failed to parse stored data, reseeding:", e.message);
         }
@@ -261,8 +266,67 @@ app.delete("/api/hygo/teams/:id", requireAdmin, (req, res) => {
     res.json({ ok: true });
 });
 
+app.delete("/api/hygo/submissions/:id", requireAdmin, (req, res) => {
+    const idx = data.submissions.findIndex(s => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
+    const sub = data.submissions[idx];
+    if (sub.status === "approved") {
+        const team = data.teams.find(t => t.id === sub.teamId);
+        if (team) {
+            team.points -= sub.awardedPoints;
+            team.missionsCount = Math.max(0, team.missionsCount - 1);
+        }
+    }
+    data.submissions.splice(idx, 1);
+    persist();
+    broadcast();
+    res.json({ ok: true });
+});
+
+app.post("/api/hygo/campaign", requireAdmin, (req, res) => {
+    const { start, end } = req.body || {};
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRe.test(start) || !dateRe.test(end)) {
+        return res.status(400).json({ error: "날짜 형식이 올바르지 않습니다." });
+    }
+    if (end < start) return res.status(400).json({ error: "종료일이 시작일보다 빠를 수 없습니다." });
+    const days = (new Date(end) - new Date(start)) / 86400000;
+    if (days > 366) return res.status(400).json({ error: "기간이 너무 깁니다 (최대 1년)." });
+
+    data.campaign = { start, end };
+    persist();
+    broadcast();
+    res.json({ ok: true, campaign: data.campaign });
+});
+
 app.post("/api/hygo/reset", requireAdmin, (req, res) => {
     data = seedData();
+    persist();
+    broadcast();
+    res.json({ ok: true });
+});
+
+app.post("/api/hygo/reset-zero", requireAdmin, (req, res) => {
+    data.teams = data.teams.map(t => ({ ...t, points: 0, missionsCount: 0 }));
+    data.submissions = [];
+    data.adjustments = [];
+    persist();
+    broadcast();
+    res.json({ ok: true });
+});
+
+app.post("/api/hygo/import", requireAdmin, (req, res) => {
+    const incoming = req.body;
+    if (!incoming || !Array.isArray(incoming.teams) || !Array.isArray(incoming.submissions) || !Array.isArray(incoming.adjustments)) {
+        return res.status(400).json({ error: "올바른 백업 파일이 아닙니다." });
+    }
+    data = {
+        teams: incoming.teams,
+        submissions: incoming.submissions,
+        adjustments: incoming.adjustments,
+        nextTeamId: incoming.nextTeamId || (Math.max(0, ...incoming.teams.map(t => t.id)) + 1),
+        campaign: (incoming.campaign && incoming.campaign.start && incoming.campaign.end) ? incoming.campaign : { ...DEFAULT_CAMPAIGN },
+    };
     persist();
     broadcast();
     res.json({ ok: true });
