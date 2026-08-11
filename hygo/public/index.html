@@ -80,29 +80,31 @@
             <stop offset="70%" stop-color="#f0a3a8"/>
             <stop offset="100%" stop-color="#f7c98c"/>
           </linearGradient>
-          <path id="hyaiCirclePath" d="M100,22 a78,78 0 1,1 -0.1,0"/>
+          <path id="hyaiCirclePath" d="M73.3,173.3 A78,78 0 1 1 126.7,173.3"/>
         </defs>
         <circle cx="100" cy="100" r="97" fill="url(#hyaiGrad)" stroke="#5b3a29" stroke-width="2"/>
-        <text font-size="12.5" letter-spacing="1.4" fill="#5b3a29" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
-          <textPath href="#hyaiCirclePath" startOffset="1%">HANYANG ARTIFICIAL INTELLIGENCE ASSOCIATION •</textPath>
+        <text font-size="9.3" letter-spacing="0.5" fill="#5b3a29" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+          <textPath href="#hyaiCirclePath" startOffset="0%">HANYANG ARTIFICIAL INTELLIGENCE ASSOCIATION</textPath>
         </text>
-        <g stroke="#5b3a29" stroke-width="2.4" fill="none" opacity="0.92">
-          <line x1="100" y1="100" x2="68" y2="68"/>
-          <line x1="100" y1="100" x2="100" y2="68"/>
-          <line x1="100" y1="100" x2="132" y2="68"/>
-          <line x1="100" y1="100" x2="132" y2="100"/>
-          <line x1="100" y1="100" x2="132" y2="132"/>
-          <line x1="100" y1="100" x2="100" y2="132"/>
-          <line x1="100" y1="100" x2="68" y2="132"/>
-          <line x1="100" y1="100" x2="68" y2="100"/>
-          <line x1="68" y1="68" x2="100" y2="68"/>
-          <line x1="100" y1="68" x2="132" y2="68"/>
+        <g stroke="#5b3a29" stroke-width="2.2" fill="none" opacity="0.92">
+          <line x1="68" y1="68" x2="68" y2="100"/>
+          <line x1="68" y1="68" x2="100" y2="100"/>
+          <line x1="68" y1="68" x2="132" y2="100"/>
+          <line x1="100" y1="68" x2="68" y2="100"/>
+          <line x1="100" y1="68" x2="100" y2="100"/>
+          <line x1="100" y1="68" x2="132" y2="100"/>
+          <line x1="132" y1="68" x2="68" y2="100"/>
+          <line x1="132" y1="68" x2="100" y2="100"/>
           <line x1="132" y1="68" x2="132" y2="100"/>
+          <line x1="68" y1="100" x2="68" y2="132"/>
+          <line x1="68" y1="100" x2="100" y2="132"/>
+          <line x1="68" y1="100" x2="132" y2="132"/>
+          <line x1="100" y1="100" x2="68" y2="132"/>
+          <line x1="100" y1="100" x2="100" y2="132"/>
+          <line x1="100" y1="100" x2="132" y2="132"/>
+          <line x1="132" y1="100" x2="68" y2="132"/>
+          <line x1="132" y1="100" x2="100" y2="132"/>
           <line x1="132" y1="100" x2="132" y2="132"/>
-          <line x1="132" y1="132" x2="100" y2="132"/>
-          <line x1="100" y1="132" x2="68" y2="132"/>
-          <line x1="68" y1="132" x2="68" y2="100"/>
-          <line x1="68" y1="100" x2="68" y2="68"/>
         </g>
         <g fill="#f3e8f0" stroke="#5b3a29" stroke-width="2.4">
           <circle cx="68" cy="68" r="12.5"/>
@@ -266,12 +268,15 @@
 
 <!-- Team History Modal -->
 <div id="historyModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
-  <div class="glass w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[85vh] flex flex-col animate-popIn">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
-      <h3 id="historyModalTitle" class="font-bold text-white">팀 미션 내역</h3>
-      <button id="historyModalClose" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+  <div class="glass w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col animate-popIn">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+      <div class="min-w-0">
+        <h3 id="historyModalTitle" class="font-bold text-white truncate">팀 미션 캘린더</h3>
+        <p id="historyModalSubtitle" class="text-[11px] text-slate-500 mt-0.5"></p>
+      </div>
+      <button id="historyModalClose" class="text-slate-400 hover:text-white text-xl leading-none shrink-0 ml-3">&times;</button>
     </div>
-    <div id="historyModalBody" class="overflow-y-auto px-5 py-4 space-y-3"></div>
+    <div id="historyModalBody" class="overflow-y-auto px-5 py-4 space-y-5"></div>
   </div>
 </div>
 
@@ -291,10 +296,17 @@
   ];
   const missionByKey = k => MISSIONS.find(m => m.key === k);
 
+  const CAMPAIGN_START = "2026-09-21";
+  const CAMPAIGN_END = "2026-10-30";
+  const CAMPAIGN_MONTHS = [[2026, 8], [2026, 9]]; // 0-based: 8=Sep, 9=Oct
+  const DAILY_CASUAL_CAP = 15;
+  const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
   let data = { teams: [], submissions: [], adjustments: [] };
   let isAdmin = false;
   let adminPw = sessionStorage.getItem("hygoAdminPw") || null;
   let currentHistoryTeamId = null;
+  let currentSelectedDate = null;
   let currentPhotoDataUrl = null;
   let photoProcessing = false;
 
@@ -405,40 +417,110 @@
 
   function openTeamHistory(teamId){
     currentHistoryTeamId = teamId;
+    currentSelectedDate = null;
     renderTeamHistory(teamId);
     document.getElementById("historyModal").classList.remove("hidden");
   }
-  function renderTeamHistory(teamId){
-    const team = data.teams.find(t => t.id === teamId);
-    if (!team){ closeHistoryModal(); return; }
-    document.getElementById("historyModalTitle").textContent = `${team.name} 미션 내역`;
-    const body = document.getElementById("historyModalBody");
+  function closeHistoryModal(){
+    document.getElementById("historyModal").classList.add("hidden");
+    currentHistoryTeamId = null;
+    currentSelectedDate = null;
+  }
 
-    const items = [
-      ...data.submissions.filter(s => s.teamId === teamId && s.status === "approved").map(s => ({ type: "mission", date: s.approvedAt || s.createdAt, s })),
-      ...data.adjustments.filter(a => a.teamId === teamId).map(a => ({ type: "adjust", date: a.date, a })),
-    ].sort((x, y) => new Date(y.date) - new Date(x.date));
+  const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const inCampaign = key => key >= CAMPAIGN_START && key <= CAMPAIGN_END;
+  const formatDotDate = key => key.replace(/-/g, ".");
 
-    if (!items.length){
-      body.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">아직 승인된 인증 내역이 없어요.</p>`;
+  function buildDayMap(teamId){
+    const map = {};
+    const ensure = key => (map[key] || (map[key] = { points: 0, missions: [], adjustments: [] }));
+    data.submissions
+      .filter(s => s.teamId === teamId && s.status === "approved")
+      .forEach(s => {
+        const entry = ensure(dateKey(new Date(s.approvedAt || s.createdAt)));
+        entry.points += s.awardedPoints;
+        entry.missions.push(s);
+      });
+    data.adjustments
+      .filter(a => a.teamId === teamId)
+      .forEach(a => ensure(dateKey(new Date(a.date))).adjustments.push(a));
+    return map;
+  }
+
+  function renderMonthCalendar(year, monthIdx, dayMap){
+    const firstDay = new Date(year, monthIdx, 1);
+    const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+    const startWeekday = firstDay.getDay();
+    const todayKey = dateKey(new Date());
+
+    const headerCells = WEEKDAY_LABELS.map(w => `<div class="text-center text-[10px] font-semibold text-slate-500 pb-1">${w}</div>`).join("");
+
+    let dayCells = "";
+    for (let i = 0; i < startWeekday; i++) dayCells += `<div></div>`;
+    for (let d = 1; d <= daysInMonth; d++){
+      const cellDate = new Date(year, monthIdx, d);
+      const key = dateKey(cellDate);
+      const active = inCampaign(key);
+      const info = dayMap[key];
+      const points = info ? info.points : 0;
+      const intensity = Math.min(1, points / DAILY_CASUAL_CAP);
+      const isToday = key === todayKey;
+      const isSelected = key === currentSelectedDate;
+      const missionEmojis = info ? [...new Set(info.missions.map(m => m.emoji))].slice(0, 3).join("") : "";
+      const hasAdjustOnly = info && !info.missions.length && info.adjustments.length;
+
+      const bgStyle = points > 0
+        ? `style="background: linear-gradient(135deg, rgba(217,70,239,${(0.16 + intensity * 0.55).toFixed(2)}), rgba(251,146,60,${(0.10 + intensity * 0.4).toFixed(2)}));"`
+        : "";
+
+      dayCells += `
+      <button data-day="${key}" ${active ? "" : "disabled"} ${bgStyle}
+        class="aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-[11px] transition select-none
+          ${active ? "cursor-pointer hover:ring-1 hover:ring-fuchsia-400/50" : "opacity-[0.15] cursor-default"}
+          ${isSelected ? "ring-2 ring-fuchsia-400" : ""}
+          ${active && !points ? "bg-black/20" : ""}">
+        <span class="font-semibold leading-none ${isToday ? "text-fuchsia-300" : "text-slate-300"}">${d}</span>
+        <span class="text-[10px] leading-none">${hasAdjustOnly ? "⚙️" : missionEmojis}</span>
+      </button>`;
+    }
+
+    return `
+    <div>
+      <p class="text-xs font-bold text-slate-300 mb-1.5">${year}년 ${monthIdx + 1}월</p>
+      <div class="grid grid-cols-7 gap-1">${headerCells}${dayCells}</div>
+    </div>`;
+  }
+
+  function renderDayDetail(teamId, dateStr){
+    const panel = document.getElementById("historyDayDetail");
+    if (!panel) return;
+    if (!dateStr){
+      panel.innerHTML = `<p class="text-center text-sm text-slate-500 py-6">달력에서 날짜를 선택하면 그날의 인증 내역을 볼 수 있어요.</p>`;
+      return;
+    }
+    const d = new Date(dateStr + "T00:00:00");
+    const label = `${d.getMonth()+1}월 ${d.getDate()}일 (${WEEKDAY_LABELS[d.getDay()]})`;
+    const missions = data.submissions.filter(s => s.teamId === teamId && s.status === "approved" && dateKey(new Date(s.approvedAt || s.createdAt)) === dateStr);
+    const adjustments = data.adjustments.filter(a => a.teamId === teamId && dateKey(new Date(a.date)) === dateStr);
+
+    let html = `<p class="text-xs font-bold text-slate-300 mb-2.5">${label}</p>`;
+    if (!missions.length && !adjustments.length){
+      html += `<p class="text-center text-sm text-slate-500 py-6 bg-black/20 rounded-xl">이 날은 기록이 없어요.</p>`;
     } else {
-      body.innerHTML = items.map(item => {
-        if (item.type === "mission"){
-          const s = item.s;
-          return `
-          <div class="flex gap-3 items-start bg-black/20 rounded-xl p-2.5 border border-white/5">
-            <img src="${s.photo}" class="w-14 h-14 rounded-lg object-cover shrink-0 border border-white/10">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between gap-2">
-                <p class="text-sm font-semibold text-white truncate">${s.emoji} ${escapeHtml(s.label)}</p>
-                <span class="text-xs font-bold text-emerald-400 shrink-0">+${s.awardedPoints}</span>
-              </div>
-              <p class="text-[11px] text-slate-400 truncate">${escapeHtml(s.memo || "")}</p>
-              <p class="text-[10px] text-slate-500 mt-0.5">참여 ${s.participants}명 · ${fmtDate(item.date)}</p>
+      html += `<div class="space-y-2.5">` +
+        missions.map(s => `
+        <div class="flex gap-3 items-start bg-black/20 rounded-xl p-2.5 border border-white/5">
+          <img src="${s.photo}" class="w-14 h-14 rounded-lg object-cover shrink-0 border border-white/10">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-sm font-semibold text-white truncate">${s.emoji} ${escapeHtml(s.label)}</p>
+              <span class="text-xs font-bold text-emerald-400 shrink-0">+${s.awardedPoints}</span>
             </div>
-          </div>`;
-        } else {
-          const a = item.a;
+            <p class="text-[11px] text-slate-400 truncate">${escapeHtml(s.memo || "")}</p>
+            <p class="text-[10px] text-slate-500 mt-0.5">참여 ${s.participants}명 · ${fmtDate(s.approvedAt || s.createdAt)}</p>
+          </div>
+        </div>`).join("") +
+        adjustments.map(a => {
           const positive = a.delta >= 0;
           return `
           <div class="flex items-center justify-between bg-black/20 rounded-xl p-3 border border-white/5">
@@ -448,13 +530,42 @@
             </div>
             <span class="text-sm font-bold ${positive ? "text-emerald-400" : "text-rose-400"}">${positive ? "+" : ""}${a.delta}</span>
           </div>`;
-        }
-      }).join("");
+        }).join("") +
+        `</div>`;
     }
+    panel.innerHTML = html;
   }
-  function closeHistoryModal(){
-    document.getElementById("historyModal").classList.add("hidden");
-    currentHistoryTeamId = null;
+
+  function renderTeamHistory(teamId){
+    const team = data.teams.find(t => t.id === teamId);
+    if (!team){ closeHistoryModal(); return; }
+    document.getElementById("historyModalTitle").textContent = `${team.name} 미션 캘린더`;
+    document.getElementById("historyModalSubtitle").textContent =
+      `누적 ${team.points}점 · 미션 ${team.missionsCount}개 · ${formatDotDate(CAMPAIGN_START)} ~ ${formatDotDate(CAMPAIGN_END)}`;
+
+    const dayMap = buildDayMap(teamId);
+    const body = document.getElementById("historyModalBody");
+    body.innerHTML = `
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        ${CAMPAIGN_MONTHS.map(([y, m]) => renderMonthCalendar(y, m, dayMap)).join("")}
+      </div>
+      <div class="flex items-center justify-end gap-1.5 text-[10px] text-slate-500">
+        <span>적음</span>
+        <span class="w-4 h-3 rounded" style="background: rgba(217,70,239,0.18)"></span>
+        <span class="w-4 h-3 rounded" style="background: rgba(217,70,239,0.45)"></span>
+        <span class="w-4 h-3 rounded" style="background: linear-gradient(135deg, rgba(217,70,239,0.7), rgba(251,146,60,0.55))"></span>
+        <span>많음</span>
+      </div>
+      <div id="historyDayDetail" class="border-t border-white/10 pt-4"></div>
+    `;
+    renderDayDetail(teamId, currentSelectedDate);
+
+    body.querySelectorAll("[data-day]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentSelectedDate = currentSelectedDate === btn.dataset.day ? null : btn.dataset.day;
+        renderTeamHistory(teamId);
+      });
+    });
   }
 
   // ---------- submit form ----------
