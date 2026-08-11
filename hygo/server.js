@@ -13,6 +13,17 @@ const ADMIN_PASSWORD = process.env.HYGO_ADMIN_PASSWORD || "hyai0926";
 const DAILY_CASUAL_CAP = 15;
 const DATA_PATH = path.join(__dirname, "data", "hygo-data.json");
 const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
+const WEBHOOK_URL = process.env.HYGO_WEBHOOK_URL || "";
+
+// 디스코드/슬랙 호환 인커밍 웹훅으로 알림을 보낸다. 실패해도 요청 흐름에는 영향을 주지 않는다.
+function notifyWebhook(message) {
+    if (!WEBHOOK_URL) return;
+    fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: message, text: message }),
+    }).catch(err => console.warn("[hygo] webhook notify failed:", err.message));
+}
 
 const MISSIONS = [
     { key: "drink", category: "일상", emoji: "🍺", label: "술 마시기", points: 10 },
@@ -182,6 +193,7 @@ app.post("/api/hygo/submissions", (req, res) => {
     data.submissions.push(sub);
     persist();
     broadcast();
+    notifyWebhook(`📸 새 미션 인증 대기 중!\n${team.name} · ${mission.emoji} ${mission.label}\n"${sub.memo}"\nHY-GO 관리자 페이지에서 승인해주세요.`);
     res.json({ ok: true, submission: sub });
 });
 
