@@ -15,6 +15,85 @@ const DATA_PATH = path.join(__dirname, "data", "hygo-data.json");
 const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
 const WEBHOOK_URL = process.env.HYGO_WEBHOOK_URL || "";
 
+// Upstash Redis(REST) 설정 — 지정돼 있으면 여기에 저장해서 Render 재시작/슬립 후에도 데이터가 남는다.
+// 지정 안 돼 있으면 로컬 파일(data/hygo-data.json)로 동작하되, 그 경우 Render 무료 플랜에서는 재시작 시 초기화된다.
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/$/, "");
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+const REDIS_ENABLED = !!(REDIS_URL && REDIS_TOKEN);
+const REDIS_KEY = "hygo:data";
+
+async function redisGetData() {
+    const res = await fetch(`${REDIS_URL}/get/${REDIS_KEY}`, {
+        headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+    });
+    if (!res.ok) throw new Error(`Upstash GET failed (${res.status})`);
+    const json = await res.json();
+    return json.result ? JSON.parse(json.result) : null;
+}
+
+async function redisSetData(value) {
+    const res = await fetch(`${REDIS_URL}/set/${REDIS_KEY}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "text/plain" },
+        body: JSON.stringify(value),
+    });
+    if (!res.ok) throw new Error(`Upstash SET failed (${res.status})`);
+}
+
+// ---------- 사진 저장 (메인 데이터 블록과 분리) ----------
+// 사진을 메인 데이터에 같이 넣으면 인증 하나 승인될 때마다 그동안 쌓인 사진을
+// 전부 다시 업로드하게 돼서 Upstash 무료 요청 크기 제한(약 1MB)에 금방 걸린다.
+// 그래서 사진은 인증 건마다 별도 키/파일로 저장하고, 메인 데이터에는 그 위치를 가리키는
+// 가벼운 URL(`/api/hygo/photo/:id`)만 남긴다.
+const PHOTOS_DIR = path.join(__dirname, "data", "photos");
+const photoRedisKey = id => `hygo:photo:${id}`;
+const isStoredPhotoRef = photo => typeof photo === "string" && photo.startsWith("/api/hygo/photo/");
+const photoRefId = photo => photo.split("/").pop();
+
+async function savePhoto(id, dataUri) {
+    if (REDIS_ENABLED) {
+        const res = await fetch(`${REDIS_URL}/set/${photoRedisKey(id)}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "text/plain" },
+            body: dataUri,
+        });
+        if (!res.ok) throw new Error(`Upstash photo SET failed (${res.status})`);
+        return;
+    }
+    fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+    await fs.promises.writeFile(path.join(PHOTOS_DIR, `${id}.txt`), dataUri, "utf-8");
+}
+
+async function loadPhoto(id) {
+    if (REDIS_ENABLED) {
+        const res = await fetch(`${REDIS_URL}/get/${photoRedisKey(id)}`, {
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+        });
+        if (!res.ok) throw new Error(`Upstash photo GET failed (${res.status})`);
+        const json = await res.json();
+        return json.result || null;
+    }
+    const p = path.join(PHOTOS_DIR, `${id}.txt`);
+    if (!fs.existsSync(p)) return null;
+    return fs.promises.readFile(p, "utf-8");
+}
+
+async function deletePhoto(id) {
+    try {
+        if (REDIS_ENABLED) {
+            await fetch(`${REDIS_URL}/del/${photoRedisKey(id)}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+            });
+        } else {
+            const p = path.join(PHOTOS_DIR, `${id}.txt`);
+            if (fs.existsSync(p)) await fs.promises.unlink(p);
+        }
+    } catch (e) {
+        console.warn(`[hygo] failed to delete photo ${id}:`, e.message);
+    }
+}
+
 // 디스코드/슬랙 호환 인커밍 웹훅으로 알림을 보낸다. 실패해도 요청 흐름에는 영향을 주지 않는다.
 function notifyWebhook(message) {
     if (!WEBHOOK_URL) return;
@@ -109,14 +188,33 @@ function seedData() {
     return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN } };
 }
 
-function loadData() {
+function normalizeCampaign(parsed) {
+    if (!parsed.campaign || !parsed.campaign.start || !parsed.campaign.end) {
+        parsed.campaign = { ...DEFAULT_CAMPAIGN };
+    }
+    return parsed;
+}
+
+async function loadData() {
+    if (REDIS_ENABLED) {
+        try {
+            const remote = await redisGetData();
+            if (remote) return normalizeCampaign(remote);
+        } catch (e) {
+            console.warn("[hygo] Upstash read failed, seeding fresh data instead:", e.message);
+        }
+        const seeded = seedData();
+        try {
+            await redisSetData(seeded);
+        } catch (e) {
+            console.warn("[hygo] Upstash write failed during initial seed:", e.message);
+        }
+        return seeded;
+    }
+
     if (fs.existsSync(DATA_PATH)) {
         try {
-            const parsed = JSON.parse(fs.readFileSync(DATA_PATH, "utf-8"));
-            if (!parsed.campaign || !parsed.campaign.start || !parsed.campaign.end) {
-                parsed.campaign = { ...DEFAULT_CAMPAIGN };
-            }
-            return parsed;
+            return normalizeCampaign(JSON.parse(fs.readFileSync(DATA_PATH, "utf-8")));
         } catch (e) {
             console.warn("[hygo] failed to parse stored data, reseeding:", e.message);
         }
@@ -127,11 +225,21 @@ function loadData() {
     return seeded;
 }
 
-let data = loadData();
+let data;
 let writeChain = Promise.resolve();
 function persist() {
-    fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
-    writeChain = writeChain.then(() => fs.promises.writeFile(DATA_PATH, JSON.stringify(data, null, 2)));
+    writeChain = writeChain.then(async () => {
+        if (REDIS_ENABLED) {
+            try {
+                await redisSetData(data);
+            } catch (e) {
+                console.warn("[hygo] Upstash write failed:", e.message);
+            }
+            return;
+        }
+        fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
+        await fs.promises.writeFile(DATA_PATH, JSON.stringify(data, null, 2));
+    });
     return writeChain;
 }
 
@@ -157,12 +265,27 @@ const broadcast = () => hygoNamespace.emit("state", data);
 
 app.get("/api/hygo/state", (req, res) => res.json(data));
 
+app.get("/api/hygo/photo/:id", async (req, res) => {
+    try {
+        const dataUri = await loadPhoto(req.params.id);
+        if (!dataUri) return res.status(404).send("Not found");
+        const match = /^data:([^;]+);base64,(.*)$/.exec(dataUri);
+        if (!match) return res.status(500).send("Invalid photo data");
+        const [, mime, b64] = match;
+        res.set("Content-Type", mime);
+        res.set("Cache-Control", "public, max-age=31536000, immutable");
+        res.send(Buffer.from(b64, "base64"));
+    } catch (e) {
+        res.status(500).send("Photo load failed");
+    }
+});
+
 app.post("/api/hygo/admin/login", (req, res) => {
     if ((req.body || {}).password === ADMIN_PASSWORD) return res.json({ ok: true });
     res.status(401).json({ ok: false, error: "암호가 올바르지 않습니다." });
 });
 
-app.post("/api/hygo/submissions", (req, res) => {
+app.post("/api/hygo/submissions", async (req, res) => {
     const { teamId, missionKey, participants, memo, photo, proposedPoints } = req.body || {};
     const mission = missionByKey(missionKey);
     const team = data.teams.find(t => t.id === Number(teamId));
@@ -177,10 +300,11 @@ app.post("/api/hygo/submissions", (req, res) => {
         return res.status(400).json({ error: "인증 사진을 업로드해주세요." });
     }
 
+    const id = uid();
     const sub = {
-        id: uid(), teamId: team.id, missionKey: mission.key, category: mission.category,
+        id, teamId: team.id, missionKey: mission.key, category: mission.category,
         label: mission.label, emoji: mission.emoji, participants: Number(participants),
-        memo: String(memo).trim(), photo, status: "pending", createdAt: new Date().toISOString(),
+        memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
     };
     if (mission.category === "돌발") {
         const pts = Number(proposedPoints);
@@ -188,6 +312,12 @@ app.post("/api/hygo/submissions", (req, res) => {
             return res.status(400).json({ error: "돌발 미션 배점을 입력해주세요." });
         }
         sub.proposedPoints = pts;
+    }
+
+    try {
+        await savePhoto(id, photo);
+    } catch (e) {
+        return res.status(502).json({ error: "사진 저장에 실패했습니다. 잠시 후 다시 시도해주세요." });
     }
 
     data.submissions.push(sub);
@@ -264,21 +394,26 @@ app.post("/api/hygo/teams", requireAdmin, (req, res) => {
     res.json({ ok: true, team });
 });
 
-app.delete("/api/hygo/teams/:id", requireAdmin, (req, res) => {
+app.delete("/api/hygo/teams/:id", requireAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (data.teams.length <= 1) return res.status(400).json({ error: "최소 한 팀은 남아있어야 합니다." });
     const idx = data.teams.findIndex(t => t.id === id);
     if (idx === -1) return res.status(404).json({ error: "팀을 찾을 수 없습니다." });
 
+    const removedSubmissions = data.submissions.filter(s => s.teamId === id);
     data.teams.splice(idx, 1);
     data.submissions = data.submissions.filter(s => s.teamId !== id);
     data.adjustments = data.adjustments.filter(a => a.teamId !== id);
     persist();
     broadcast();
     res.json({ ok: true });
+
+    for (const sub of removedSubmissions) {
+        if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
+    }
 });
 
-app.delete("/api/hygo/submissions/:id", requireAdmin, (req, res) => {
+app.delete("/api/hygo/submissions/:id", requireAdmin, async (req, res) => {
     const idx = data.submissions.findIndex(s => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
     const sub = data.submissions[idx];
@@ -293,6 +428,8 @@ app.delete("/api/hygo/submissions/:id", requireAdmin, (req, res) => {
     persist();
     broadcast();
     res.json({ ok: true });
+
+    if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
 });
 
 app.post("/api/hygo/campaign", requireAdmin, (req, res) => {
@@ -311,30 +448,71 @@ app.post("/api/hygo/campaign", requireAdmin, (req, res) => {
     res.json({ ok: true, campaign: data.campaign });
 });
 
-app.post("/api/hygo/reset", requireAdmin, (req, res) => {
+app.get("/api/hygo/export", requireAdmin, async (req, res) => {
+    try {
+        const exported = JSON.parse(JSON.stringify(data));
+        for (const sub of exported.submissions) {
+            if (isStoredPhotoRef(sub.photo)) {
+                const real = await loadPhoto(photoRefId(sub.photo));
+                if (real) sub.photo = real;
+            }
+        }
+        res.json(exported);
+    } catch (e) {
+        res.status(500).json({ error: "백업 생성에 실패했습니다." });
+    }
+});
+
+app.post("/api/hygo/reset", requireAdmin, async (req, res) => {
+    const oldSubmissions = data.submissions;
     data = seedData();
     persist();
     broadcast();
     res.json({ ok: true });
+
+    for (const sub of oldSubmissions) {
+        if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
+    }
 });
 
-app.post("/api/hygo/reset-zero", requireAdmin, (req, res) => {
+app.post("/api/hygo/reset-zero", requireAdmin, async (req, res) => {
+    const oldSubmissions = data.submissions;
     data.teams = data.teams.map(t => ({ ...t, points: 0, missionsCount: 0 }));
     data.submissions = [];
     data.adjustments = [];
     persist();
     broadcast();
     res.json({ ok: true });
+
+    for (const sub of oldSubmissions) {
+        if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
+    }
 });
 
-app.post("/api/hygo/import", requireAdmin, (req, res) => {
+app.post("/api/hygo/import", requireAdmin, async (req, res) => {
     const incoming = req.body;
     if (!incoming || !Array.isArray(incoming.teams) || !Array.isArray(incoming.submissions) || !Array.isArray(incoming.adjustments)) {
         return res.status(400).json({ error: "올바른 백업 파일이 아닙니다." });
     }
+
+    const oldSubmissions = data.submissions;
+    const importedSubmissions = [];
+    for (const sub of incoming.submissions) {
+        const clone = { ...sub };
+        if (typeof clone.photo === "string" && clone.photo.startsWith("data:image/")) {
+            try {
+                await savePhoto(clone.id, clone.photo);
+                clone.photo = `/api/hygo/photo/${clone.id}`;
+            } catch (e) {
+                return res.status(502).json({ error: "백업 사진 복원에 실패했습니다." });
+            }
+        }
+        importedSubmissions.push(clone);
+    }
+
     data = {
         teams: incoming.teams,
-        submissions: incoming.submissions,
+        submissions: importedSubmissions,
         adjustments: incoming.adjustments,
         nextTeamId: incoming.nextTeamId || (Math.max(0, ...incoming.teams.map(t => t.id)) + 1),
         campaign: (incoming.campaign && incoming.campaign.start && incoming.campaign.end) ? incoming.campaign : { ...DEFAULT_CAMPAIGN },
@@ -342,9 +520,21 @@ app.post("/api/hygo/import", requireAdmin, (req, res) => {
     persist();
     broadcast();
     res.json({ ok: true });
+
+    for (const sub of oldSubmissions) {
+        if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
+    }
 });
 
-const PORT = process.env.HYGO_PORT || 4000;
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`HY-GO server running on port ${PORT}`);
-});
+async function main() {
+    data = await loadData();
+    const PORT = process.env.HYGO_PORT || 4000;
+    server.listen(PORT, "0.0.0.0", () => {
+        console.log(`HY-GO server running on port ${PORT}`);
+        console.log(REDIS_ENABLED
+            ? "[hygo] persistent storage: Upstash Redis (data survives restarts)"
+            : "[hygo] persistent storage: local file — WARNING: data will NOT survive Render restarts/sleep on the free tier");
+    });
+}
+
+main();

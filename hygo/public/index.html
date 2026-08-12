@@ -1187,17 +1187,22 @@
     }
   }
 
-  function downloadBackup(){
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hygo-backup-${dateKey(new Date())}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast("백업 파일을 다운로드했어요.");
+  async function downloadBackup(){
+    try {
+      const exported = await apiSend("GET", "/api/hygo/export");
+      const blob = new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hygo-backup-${dateKey(new Date())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast("백업 파일을 다운로드했어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   async function handleBackupRestore(e){
