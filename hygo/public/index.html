@@ -95,6 +95,15 @@
       <button id="installBtn" type="button" class="hidden items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition">
         <span>📲</span><span>앱 설치</span>
       </button>
+      <div id="userChip" class="hidden items-center gap-1.5">
+        <img id="userAvatar" class="w-6 h-6 rounded-full object-cover ring-1 ring-white/20" src="" alt="">
+        <span id="userNickname" class="text-xs font-semibold text-slate-200"></span>
+        <span id="userTeamLabel" class="text-[10px] text-slate-500"></span>
+        <button id="logoutBtn" class="text-[10px] text-slate-500 hover:text-white underline ml-0.5">로그아웃</button>
+      </div>
+      <a id="kakaoLoginBtn" href="/api/hygo/auth/kakao/login" class="hidden items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-[#191919] bg-[#FEE500] hover:opacity-90 transition">
+        <span>💬</span><span>카카오 로그인</span>
+      </a>
       <span id="connDot" class="conn-dot bg-slate-500"></span>
       <span id="connLabel">연결 중...</span>
       <span class="hidden sm:inline" id="headerClock"></span>
@@ -134,11 +143,20 @@
   <!-- ================= SUBMIT ================= -->
   <section id="tab-submit" class="hidden space-y-4 animate-fadeIn">
     <h2 class="text-lg font-bold text-white">📸 미션 인증하기</h2>
-    <form id="submitForm" class="glass rounded-2xl p-4 sm:p-5 space-y-4">
+
+    <div id="submitLoginGate" class="hidden glass rounded-2xl p-6 text-center space-y-3">
+      <div class="text-3xl">🔒</div>
+      <p class="text-sm text-slate-300">미션 인증은 카카오 로그인 후 이용할 수 있어요.</p>
+      <a href="/api/hygo/auth/kakao/login" class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-[#191919] bg-[#FEE500] hover:opacity-90 transition">
+        <span>💬</span><span>카카오로 로그인</span>
+      </a>
+    </div>
+
+    <form id="submitForm" class="hidden glass rounded-2xl p-4 sm:p-5 space-y-4">
 
       <div>
-        <label class="block text-xs font-semibold text-slate-400 mb-1.5">팀 선택</label>
-        <select id="teamSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">소속 팀</label>
+        <div id="submitTeamDisplay" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-200"></div>
       </div>
 
       <div>
@@ -320,6 +338,17 @@
       <button id="promptModalCancel" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-white/10 hover:bg-white/15 text-white transition">취소</button>
       <button id="promptModalOk" class="flex-1 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition text-white">확인</button>
     </div>
+  </div>
+</div>
+
+<!-- Team Select Gate (로그인 후 팀이 아직 없으면 무조건 여기부터) -->
+<div id="teamSelectModal" class="hidden fixed inset-0 z-[68] modal-backdrop flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
+    <div>
+      <h3 class="font-bold text-white">소속 팀을 선택해주세요</h3>
+      <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">한 번 선택하면 계정에 계속 연결돼요. 다른 팀으로 잘못 골랐다면 관리자에게 문의해주세요.</p>
+    </div>
+    <div id="teamSelectGrid" class="grid grid-cols-2 gap-2"></div>
   </div>
 </div>
 
@@ -526,6 +555,7 @@
   let currentPhotoDataUrl = null;
   let photoProcessing = false;
   let expandedComments = new Set();
+  let currentUser = null;
 
   const socket = io("/hygo");
 
@@ -600,6 +630,84 @@
     });
   }
 
+  // ---------- 로그인(카카오) ----------
+  async function fetchCurrentUser(){
+    try {
+      const res = await fetch("/api/hygo/auth/me");
+      if (!res.ok) { currentUser = null; return; }
+      const json = await res.json();
+      currentUser = json.user;
+    } catch (e) {
+      currentUser = null;
+    }
+  }
+
+  function renderAuthUI(){
+    const loggedIn = !!currentUser;
+    document.getElementById("kakaoLoginBtn").classList.toggle("hidden", loggedIn);
+    document.getElementById("kakaoLoginBtn").classList.toggle("flex", !loggedIn);
+    document.getElementById("userChip").classList.toggle("hidden", !loggedIn);
+    document.getElementById("userChip").classList.toggle("flex", loggedIn);
+    if (loggedIn){
+      document.getElementById("userAvatar").src = currentUser.profileImage || "/icons/icon-192.png";
+      document.getElementById("userNickname").textContent = currentUser.nickname;
+      const team = currentUser.teamId ? data.teams.find(t => t.id === currentUser.teamId) : null;
+      document.getElementById("userTeamLabel").textContent = team ? `· ${team.name}` : "· 팀 미선택";
+    }
+    updateSubmitGate();
+    if (loggedIn && !currentUser.teamId) showTeamSelectGate(); else hideTeamSelectGate();
+  }
+
+  function showTeamSelectGate(){
+    const grid = document.getElementById("teamSelectGrid");
+    grid.innerHTML = data.teams.map(t => `
+      <button data-select-team="${t.id}" class="py-2.5 rounded-xl text-sm font-semibold bg-black/30 border border-white/10 hover:border-fuchsia-400/50 hover:bg-white/5 transition text-slate-200">${escapeHtml(t.name)}</button>
+    `).join("");
+    grid.querySelectorAll("[data-select-team]").forEach(btn => btn.addEventListener("click", () => selectMyTeam(Number(btn.dataset.selectTeam))));
+    document.getElementById("teamSelectModal").classList.remove("hidden");
+  }
+  function hideTeamSelectGate(){
+    document.getElementById("teamSelectModal").classList.add("hidden");
+  }
+  async function selectMyTeam(teamId){
+    try {
+      const res = await apiSend("POST", "/api/hygo/auth/team", { teamId });
+      currentUser = res.user;
+      toast(`${data.teams.find(t => t.id === teamId)?.name || ""} 소속으로 등록됐어요!`);
+      renderAuthUI();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function promptLogin(){
+    const ok = await confirmModal("이 기능을 사용하려면 카카오 로그인이 필요해요.", { title: "로그인 필요", okText: "카카오로 로그인" });
+    if (ok) location.href = "/api/hygo/auth/kakao/login";
+  }
+  function ensureLoggedIn(){
+    if (currentUser) return true;
+    promptLogin();
+    return false;
+  }
+
+  function updateSubmitGate(){
+    const loggedIn = !!currentUser;
+    document.getElementById("submitLoginGate").classList.toggle("hidden", loggedIn);
+    document.getElementById("submitForm").classList.toggle("hidden", !loggedIn);
+    document.getElementById("submitForm").classList.toggle("flex", false);
+    if (loggedIn){
+      const team = currentUser.teamId ? data.teams.find(t => t.id === currentUser.teamId) : null;
+      document.getElementById("submitTeamDisplay").textContent = team ? team.name : "팀을 먼저 선택해주세요";
+    }
+  }
+
+  async function logout(){
+    await apiSend("POST", "/api/hygo/auth/logout", {});
+    currentUser = null;
+    renderAuthUI();
+    toast("로그아웃했어요.");
+  }
+
   function getCampaign(){
     return (data.campaign && data.campaign.start && data.campaign.end) ? data.campaign : DEFAULT_CAMPAIGN;
   }
@@ -649,9 +757,7 @@
 
   function renderAll(){
     renderLeaderboard();
-    if (document.getElementById("tab-submit").classList.contains("hidden") === false) {
-      populateTeamSelect();
-    }
+    updateSubmitGate();
     renderFeed();
     if (reactionPickerSubId) renderReactionPickerContent();
     if (isAdmin) {
@@ -671,7 +777,7 @@
     document.getElementById(`tab-${name}`).classList.remove("hidden");
     document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === name));
     if (name === "leaderboard") renderLeaderboard();
-    if (name === "submit") { populateTeamSelect(); populateMissionSelect(); }
+    if (name === "submit") { updateSubmitGate(); populateMissionSelect(); }
     if (name === "feed") renderFeed();
     if (name === "admin") renderAdmin();
   }
@@ -889,12 +995,6 @@
   }
 
   // ---------- submit form ----------
-  function populateTeamSelect(){
-    const sel = document.getElementById("teamSelect");
-    const prev = sel.value;
-    sel.innerHTML = data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
-    if (data.teams.some(t => String(t.id) === prev)) sel.value = prev;
-  }
   function populateMissionSelect(){
     const sel = document.getElementById("missionSelect");
     const groups = { "일상": [], "돌발": [] };
@@ -964,7 +1064,8 @@
 
   async function handleSubmit(e){
     e.preventDefault();
-    const teamId = Number(document.getElementById("teamSelect").value);
+    if (!ensureLoggedIn()) return;
+    if (!currentUser.teamId){ toast("먼저 소속 팀을 선택해주세요.", "error"); showTeamSelectGate(); return; }
     const missionKey = document.getElementById("missionSelect").value;
     const mission = missionByKey(missionKey);
     const participants = Number(document.getElementById("participantCount").value);
@@ -987,7 +1088,7 @@
       return;
     }
 
-    const payload = { teamId, missionKey, participants, memo, photo: currentPhotoDataUrl };
+    const payload = { missionKey, participants, memo, photo: currentPhotoDataUrl };
     if (mission.category === "돌발"){
       const pts = Number(document.getElementById("surprisePoints").value) || 0;
       if (pts <= 0){ toast("돌발 미션 배점을 입력해주세요.", "error"); return; }
@@ -1035,20 +1136,9 @@
     }
   }
 
-  // ---------- reactions (브라우저당 하나만, 인스타/페북 스타일 요약 + 상세) ----------
+  // ---------- reactions (계정당 하나만, 인스타/페북 스타일 요약 + 상세) ----------
   let reactionPickerSubId = null;
   let reactionInFlight = new Set();
-
-  function getMyReaction(subId){
-    try { return (JSON.parse(localStorage.getItem("hygoMyReactions") || "{}"))[subId] || null; }
-    catch (e) { return null; }
-  }
-  function setMyReaction(subId, emoji){
-    let map = {};
-    try { map = JSON.parse(localStorage.getItem("hygoMyReactions") || "{}"); } catch (e) { /* ignore */ }
-    if (emoji) map[subId] = emoji; else delete map[subId];
-    localStorage.setItem("hygoMyReactions", JSON.stringify(map));
-  }
 
   function renderReactionsBar(sub){
     const reactions = sub.reactions || {};
@@ -1071,7 +1161,7 @@
     const popup = document.getElementById("reactionPicker");
     if (!sub){ closeReactionPicker(); return; }
     const reactions = sub.reactions || {};
-    const myReaction = getMyReaction(sub.id);
+    const myReaction = (currentUser && sub.reactedBy) ? (sub.reactedBy[currentUser.id] || null) : null;
     popup.innerHTML = REACTIONS.map(r => {
       const count = reactions[r.key] || 0;
       const mine = myReaction === r.key;
@@ -1102,26 +1192,25 @@
     else openReactionPicker(subId, anchorBtn);
   }
 
-  // 같은 게시물에 대한 요청이 끝나기 전에 또 누르면 무시한다 — 안 그러면 previousEmoji가
-  // 서버의 실제 상태와 어긋나서 카운트가 꼬인다(빠르게 여러 번 누를 때 특히).
+  // 서버가 계정별 반응(reactedBy)을 기준으로 토글/카운트를 전부 계산해서 돌려주기 때문에,
+  // 클라이언트는 그 결과를 그대로 반영하기만 하면 된다 — 어긋날 일이 구조적으로 없다.
+  // 같은 게시물에 대한 요청이 끝나기 전에 또 누르면 무시해서 중복 요청만 막는다.
   async function handleReactionSelect(subId, emoji){
+    if (!ensureLoggedIn()) return;
     if (reactionInFlight.has(subId)) return;
     reactionInFlight.add(subId);
-    const previous = getMyReaction(subId);
-    const next = previous === emoji ? null : emoji;
-    setMyReaction(subId, next);
-    if (reactionPickerSubId === subId) renderReactionPickerContent();
-    renderFeed();
     try {
-      const res = await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: next, previousEmoji: previous });
+      const res = await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji });
       const sub = data.submissions.find(s => s.id === subId);
-      if (sub) sub.reactions = res.reactions;
+      if (sub) {
+        sub.reactions = res.reactions;
+        if (!sub.reactedBy) sub.reactedBy = {};
+        if (res.myReaction) sub.reactedBy[currentUser.id] = res.myReaction;
+        else delete sub.reactedBy[currentUser.id];
+      }
       if (reactionPickerSubId === subId) renderReactionPickerContent();
       renderFeed();
     } catch (err) {
-      setMyReaction(subId, previous);
-      if (reactionPickerSubId === subId) renderReactionPickerContent();
-      renderFeed();
       toast(err.message, "error");
     } finally {
       reactionInFlight.delete(subId);
@@ -1129,16 +1218,7 @@
   }
 
   // ---------- comments ----------
-  function getMyComments(){
-    try { return new Set(JSON.parse(localStorage.getItem("hygoMyComments") || "[]")); }
-    catch (e) { return new Set(); }
-  }
-  function rememberMyComment(id){
-    const set = getMyComments();
-    set.add(id);
-    localStorage.setItem("hygoMyComments", JSON.stringify([...set]));
-  }
-  function isMyComment(id){ return getMyComments().has(id); }
+  const isMyComment = c => !!(currentUser && c.authorId === currentUser.id);
 
   function renderCommentsSection(sub){
     const visibleComments = (sub.comments || []).filter(c => !c.reported);
@@ -1150,8 +1230,8 @@
           <p class="text-xs text-slate-200 break-words">${escapeHtml(c.text)}</p>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          ${(isAdmin || isMyComment(c.id)) ? `<button data-delete-comment="${c.id}" title="삭제" class="text-slate-500 hover:text-rose-400 text-xs leading-none px-1">✕</button>` : ""}
-          ${!isMyComment(c.id) ? `<button data-report-comment="${c.id}" title="신고" class="text-slate-500 hover:text-amber-400 text-xs leading-none px-1">🚩</button>` : ""}
+          ${(isAdmin || isMyComment(c)) ? `<button data-delete-comment="${c.id}" title="삭제" class="text-slate-500 hover:text-rose-400 text-xs leading-none px-1">✕</button>` : ""}
+          ${!isMyComment(c) ? `<button data-report-comment="${c.id}" title="신고" class="text-slate-500 hover:text-amber-400 text-xs leading-none px-1">🚩</button>` : ""}
         </div>
       </div>`).join("");
 
@@ -1160,10 +1240,16 @@
       <button data-toggle-comments="${sub.id}" class="text-[11px] text-slate-400 hover:text-white transition">💬 댓글 ${visibleComments.length}개 ${isOpen ? "숨기기" : "보기"}</button>
       <div class="${isOpen ? "" : "hidden"} mt-2 space-y-2">
         <div class="space-y-1.5 max-h-36 overflow-y-auto">${list || `<p class="text-[11px] text-slate-500 text-center py-1.5">아직 댓글이 없어요.</p>`}</div>
-        <form data-comment-form="${sub.id}" class="flex gap-1.5">
-          <input type="text" data-comment-name maxlength="20" value="${escapeHtml(localStorage.getItem("hygoCommentName") || "")}" placeholder="이름(선택)" class="w-20 shrink-0 bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-fuchsia-500">
-          <input type="text" data-comment-text maxlength="200" placeholder="댓글 달기..." class="flex-1 min-w-0 bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-fuchsia-500">
-          <button type="submit" class="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30 hover:bg-fuchsia-500/30 transition">등록</button>
+        <form data-comment-form="${sub.id}" class="space-y-1.5">
+          <div class="flex gap-1.5">
+            <input type="text" data-comment-text maxlength="200" placeholder="${currentUser ? "댓글 달기..." : "댓글을 달려면 카카오 로그인이 필요해요"}" class="flex-1 min-w-0 bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-fuchsia-500">
+            <button type="submit" class="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30 hover:bg-fuchsia-500/30 transition">등록</button>
+          </div>
+          ${currentUser ? `
+          <label class="flex items-center gap-1.5 text-[11px] text-slate-500">
+            <input type="checkbox" data-comment-anonymous class="rounded border-white/20 bg-black/30">
+            익명으로 게시
+          </label>` : ""}
         </form>
       </div>
     </div>`;
@@ -1171,17 +1257,15 @@
 
   async function handleCommentSubmit(e){
     e.preventDefault();
+    if (!ensureLoggedIn()) return;
     const form = e.target;
     const subId = form.dataset.commentForm;
-    const nameInput = form.querySelector("[data-comment-name]");
     const textInput = form.querySelector("[data-comment-text]");
-    const authorName = nameInput.value.trim();
+    const anonymousInput = form.querySelector("[data-comment-anonymous]");
     const text = textInput.value.trim();
     if (!text){ toast("댓글 내용을 입력해주세요.", "error"); return; }
     try {
-      const res = await apiSend("POST", `/api/hygo/submissions/${subId}/comments`, { authorName, text });
-      rememberMyComment(res.comment.id);
-      if (authorName) localStorage.setItem("hygoCommentName", authorName);
+      await apiSend("POST", `/api/hygo/submissions/${subId}/comments`, { text, anonymous: !!(anonymousInput && anonymousInput.checked) });
       expandedComments.add(subId);
       renderFeed();
     } catch (err) {
@@ -1198,6 +1282,7 @@
   }
 
   async function reportComment(id){
+    if (!ensureLoggedIn()) return;
     const ok = await confirmModal("이 댓글을 신고할까요? 신고하면 관리자가 검토할 때까지 피드에서 보이지 않아요.", { title: "댓글 신고", danger: true, okText: "신고" });
     if (!ok) return;
     try {
@@ -1616,8 +1701,15 @@
     document.getElementById("resetZeroBtn").addEventListener("click", resetToZero);
     document.getElementById("resetSampleBtn").addEventListener("click", resetSampleData);
 
+    document.getElementById("logoutBtn").addEventListener("click", logout);
+
     tickClock();
     setInterval(tickClock, 30000);
+
+    if (new URLSearchParams(location.search).has("loginError")) {
+      toast("카카오 로그인에 실패했어요. 다시 시도해주세요.", "error");
+      history.replaceState(null, "", location.pathname);
+    }
 
     try {
       data = await apiGet("/api/hygo/state");
@@ -1625,9 +1717,10 @@
       toast("서버에 연결할 수 없어요. 잠시 후 다시 시도해주세요.", "error");
     }
     await tryAutoLogin();
-    populateTeamSelect();
+    await fetchCurrentUser();
     populateMissionSelect();
     renderAll();
+    renderAuthUI();
   }
 
   document.addEventListener("DOMContentLoaded", init);

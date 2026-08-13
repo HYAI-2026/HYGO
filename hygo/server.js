@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const express = require("express");
+const cookieParser = require("cookie-parser");
 const { Server: SocketIOServer } = require("socket.io");
 
 const ADMIN_PASSWORD = process.env.HYGO_ADMIN_PASSWORD || "hyai0926";
@@ -14,6 +15,17 @@ const DAILY_CASUAL_CAP = 15;
 const DATA_PATH = path.join(__dirname, "data", "hygo-data.json");
 const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
 const WEBHOOK_URL = process.env.HYGO_WEBHOOK_URL || "";
+
+// ---------- 카카오 로그인 ----------
+// KAKAO_*_URL은 기본값이 실제 카카오 서버지만, 로컬 테스트 때는 가짜 서버로 오버라이드해서 검증한다.
+const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || "";
+const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET || "";
+const KAKAO_REDIRECT_URI = process.env.KAKAO_REDIRECT_URI || "";
+const KAKAO_AUTHORIZE_URL = process.env.KAKAO_AUTHORIZE_URL || "https://kauth.kakao.com/oauth/authorize";
+const KAKAO_TOKEN_URL = process.env.KAKAO_TOKEN_URL || "https://kauth.kakao.com/oauth/token";
+const KAKAO_USERINFO_URL = process.env.KAKAO_USERINFO_URL || "https://kapi.kakao.com/v2/user/me";
+const COOKIE_SECRET = process.env.COOKIE_SECRET || "hygo-dev-secret-please-change";
+const COOKIE_MAX_AGE = 1000 * 60 * 60 * 24 * 180; // 180일
 
 // Upstash Redis(REST) 설정 — 지정돼 있으면 여기에 저장해서 Render 재시작/슬립 후에도 데이터가 남는다.
 // 지정 안 돼 있으면 로컬 파일(data/hygo-data.json)로 동작하되, 그 경우 Render 무료 플랜에서는 재시작 시 초기화된다.
@@ -150,7 +162,7 @@ function seedData() {
             id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
             participants, memo, photo: placeholderPhoto(m.emoji, teamId + submissions.length),
             status: "approved", createdAt, approvedAt: createdAt,
-            awardedPoints: awarded !== undefined ? awarded : m.points, comments: [], reactions: emptyReactions(),
+            awardedPoints: awarded !== undefined ? awarded : m.points, comments: [], reactions: emptyReactions(), reactedBy: {},
         });
     }
 
@@ -172,12 +184,12 @@ function seedData() {
     submissions.push({
         id: uid(), teamId: 5, missionKey: "meal", category: "일상", label: "밥 먹기", emoji: "🍚",
         participants: 3, memo: "저녁 같이 먹었어요", photo: placeholderPhoto("🍚", 50),
-        status: "pending", createdAt: new Date().toISOString(), comments: [], reactions: emptyReactions(),
+        status: "pending", createdAt: new Date().toISOString(), comments: [], reactions: emptyReactions(), reactedBy: {},
     });
     submissions.push({
         id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
         participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
-        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [], reactions: emptyReactions(),
+        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [], reactions: emptyReactions(), reactedBy: {},
     });
 
     const adjustments = [];
@@ -188,17 +200,19 @@ function seedData() {
         t.missionsCount += 1;
     });
 
-    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN } };
+    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [] };
 }
 
 function normalizeCampaign(parsed) {
     if (!parsed.campaign || !parsed.campaign.start || !parsed.campaign.end) {
         parsed.campaign = { ...DEFAULT_CAMPAIGN };
     }
+    if (!Array.isArray(parsed.users)) parsed.users = [];
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
             s.comments.forEach(c => { if (typeof c.reported !== "boolean") c.reported = false; });
+            if (!s.reactedBy || typeof s.reactedBy !== "object") s.reactedBy = {};
             if (!s.reactions || typeof s.reactions !== "object") s.reactions = emptyReactions();
             REACTION_TYPES.forEach(key => { if (typeof s.reactions[key] !== "number") s.reactions[key] = 0; });
         });
@@ -261,12 +275,26 @@ function requireAdmin(req, res, next) {
     next();
 }
 
+function getCurrentUser(req) {
+    const uidCookie = req.signedCookies && req.signedCookies.hygo_uid;
+    if (!uidCookie) return null;
+    return data.users.find(u => u.id === uidCookie) || null;
+}
+
+function requireLogin(req, res, next) {
+    const user = getCurrentUser(req);
+    if (!user) return res.status(401).json({ error: "카카오 로그인이 필요합니다." });
+    req.hygoUser = user;
+    next();
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server);
 
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json({ limit: "15mb" }));
+app.use(cookieParser(COOKIE_SECRET));
 
 const hygoNamespace = io.of("/hygo");
 hygoNamespace.on("connection", socket => {
@@ -296,13 +324,98 @@ app.post("/api/hygo/admin/login", (req, res) => {
     res.status(401).json({ ok: false, error: "암호가 올바르지 않습니다." });
 });
 
-app.post("/api/hygo/submissions", async (req, res) => {
-    const { teamId, missionKey, participants, memo, photo, proposedPoints } = req.body || {};
+// ---------- 카카오 로그인 ----------
+function kakaoRedirectUri(req) {
+    return KAKAO_REDIRECT_URI || `${req.protocol}://${req.get("host")}/api/hygo/auth/kakao/callback`;
+}
+
+app.get("/api/hygo/auth/kakao/login", (req, res) => {
+    if (!KAKAO_REST_API_KEY) return res.status(501).send("카카오 로그인이 아직 설정되지 않았습니다. 관리자에게 문의해주세요.");
+    const url = `${KAKAO_AUTHORIZE_URL}?client_id=${encodeURIComponent(KAKAO_REST_API_KEY)}&redirect_uri=${encodeURIComponent(kakaoRedirectUri(req))}&response_type=code`;
+    res.redirect(url);
+});
+
+app.get("/api/hygo/auth/kakao/callback", async (req, res) => {
+    const { code, error } = req.query;
+    if (error || !code) return res.redirect("/?loginError=1");
+    try {
+        const tokenParams = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: KAKAO_REST_API_KEY,
+            redirect_uri: kakaoRedirectUri(req),
+            code: String(code),
+        });
+        if (KAKAO_CLIENT_SECRET) tokenParams.set("client_secret", KAKAO_CLIENT_SECRET);
+
+        const tokenRes = await fetch(KAKAO_TOKEN_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: tokenParams.toString(),
+        });
+        if (!tokenRes.ok) throw new Error(`token exchange failed (${tokenRes.status})`);
+        const tokenJson = await tokenRes.json();
+
+        const userRes = await fetch(KAKAO_USERINFO_URL, {
+            headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+        });
+        if (!userRes.ok) throw new Error(`user info fetch failed (${userRes.status})`);
+        const userJson = await userRes.json();
+
+        const kakaoId = String(userJson.id);
+        const account = userJson.kakao_account || {};
+        const profile = account.profile || {};
+        const nickname = profile.nickname || "카카오 사용자";
+        const profileImage = profile.profile_image_url || "";
+
+        let user = data.users.find(u => u.id === kakaoId);
+        if (!user) {
+            user = { id: kakaoId, nickname, profileImage, teamId: null, createdAt: new Date().toISOString() };
+            data.users.push(user);
+        } else {
+            user.nickname = nickname;
+            user.profileImage = profileImage;
+        }
+        persist();
+        broadcast();
+
+        res.cookie("hygo_uid", kakaoId, { httpOnly: true, signed: true, sameSite: "lax", maxAge: COOKIE_MAX_AGE });
+        res.redirect("/");
+    } catch (e) {
+        console.warn("[hygo] kakao login failed:", e.message);
+        res.redirect("/?loginError=1");
+    }
+});
+
+app.post("/api/hygo/auth/logout", (req, res) => {
+    res.clearCookie("hygo_uid");
+    res.json({ ok: true });
+});
+
+app.get("/api/hygo/auth/me", (req, res) => {
+    const user = getCurrentUser(req);
+    if (!user) return res.status(401).json({ error: "로그인이 필요합니다." });
+    res.json({ user });
+});
+
+app.post("/api/hygo/auth/team", requireLogin, (req, res) => {
+    const teamId = Number((req.body || {}).teamId);
+    const team = data.teams.find(t => t.id === teamId);
+    if (!team) return res.status(400).json({ error: "올바르지 않은 팀입니다." });
+    req.hygoUser.teamId = teamId;
+    persist();
+    broadcast();
+    res.json({ ok: true, user: req.hygoUser });
+});
+
+app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
+    const user = req.hygoUser;
+    if (!user.teamId) return res.status(400).json({ error: "먼저 소속 팀을 선택해주세요." });
+    const { missionKey, participants, memo, photo, proposedPoints } = req.body || {};
     const mission = missionByKey(missionKey);
-    const team = data.teams.find(t => t.id === Number(teamId));
+    const team = data.teams.find(t => t.id === user.teamId);
 
     if (!mission) return res.status(400).json({ error: "올바르지 않은 미션 유형입니다." });
-    if (!team) return res.status(400).json({ error: "올바르지 않은 팀입니다." });
+    if (!team) return res.status(400).json({ error: "소속 팀을 찾을 수 없습니다. 팀을 다시 선택해주세요." });
     if (!Number.isFinite(Number(participants)) || Number(participants) < 3) {
         return res.status(400).json({ error: "참여 인원은 최소 3명 이상이어야 합니다." });
     }
@@ -316,7 +429,7 @@ app.post("/api/hygo/submissions", async (req, res) => {
         id, teamId: team.id, missionKey: mission.key, category: mission.category,
         label: mission.label, emoji: mission.emoji, participants: Number(participants),
         memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
-        comments: [], reactions: emptyReactions(),
+        authorId: user.id, comments: [], reactions: emptyReactions(), reactedBy: {},
     };
     if (mission.category === "돌발") {
         const pts = Number(proposedPoints);
@@ -382,15 +495,17 @@ app.post("/api/hygo/submissions/:id/reject", requireAdmin, (req, res) => {
     res.json({ ok: true });
 });
 
-app.post("/api/hygo/submissions/:id/comments", (req, res) => {
+app.post("/api/hygo/submissions/:id/comments", requireLogin, (req, res) => {
+    const user = req.hygoUser;
     const sub = data.submissions.find(s => s.id === req.params.id);
     if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
-    const { authorName, text } = req.body || {};
+    const { text, anonymous } = req.body || {};
     if (!text || !String(text).trim()) return res.status(400).json({ error: "댓글 내용을 입력해주세요." });
 
     const comment = {
         id: uid(),
-        authorName: (authorName && String(authorName).trim()) ? String(authorName).trim().slice(0, 20) : "익명",
+        authorId: user.id,
+        authorName: anonymous ? "익명" : (user.nickname || "익명"),
         text: String(text).trim().slice(0, 200),
         createdAt: new Date().toISOString(),
         reported: false,
@@ -402,7 +517,7 @@ app.post("/api/hygo/submissions/:id/comments", (req, res) => {
     res.json({ ok: true, comment });
 });
 
-app.post("/api/hygo/comments/:id/report", (req, res) => {
+app.post("/api/hygo/comments/:id/report", requireLogin, (req, res) => {
     for (const sub of data.submissions) {
         if (!Array.isArray(sub.comments)) continue;
         const comment = sub.comments.find(c => c.id === req.params.id);
@@ -433,10 +548,15 @@ app.post("/api/hygo/comments/:id/restore", requireAdmin, (req, res) => {
 });
 
 app.delete("/api/hygo/comments/:id", (req, res) => {
+    const user = getCurrentUser(req);
+    const isAdminReq = req.get("x-admin-password") === ADMIN_PASSWORD;
     for (const sub of data.submissions) {
         if (!Array.isArray(sub.comments)) continue;
         const idx = sub.comments.findIndex(c => c.id === req.params.id);
         if (idx !== -1) {
+            const comment = sub.comments[idx];
+            const isOwner = user && comment.authorId === user.id;
+            if (!isOwner && !isAdminReq) return res.status(401).json({ error: "삭제 권한이 없습니다." });
             sub.comments.splice(idx, 1);
             persist();
             broadcast();
@@ -446,22 +566,26 @@ app.delete("/api/hygo/comments/:id", (req, res) => {
     res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 });
 
-// 브라우저(계정)당 반응 하나만 허용한다. 클라이언트가 이전에 눌렀던 반응(previousEmoji)과
-// 새로 선택한 반응(emoji)을 같이 보내면, 서버는 이전 것을 -1, 새 것을 +1 해서 원자적으로 전환한다.
-// 둘 중 하나는 null일 수 있다 (emoji=null: 반응 취소, previousEmoji=null: 첫 반응).
-app.post("/api/hygo/submissions/:id/react", (req, res) => {
+// 계정별로 실제 로그인한 사용자 ID에 반응을 매핑해서 저장한다(reactedBy). 카운트(reactions)는
+// 그 매핑을 집계해서 다시 계산하기 때문에, 클라이언트가 뭘 보내든 서버 쪽에서 어긋날 수가 없다.
+app.post("/api/hygo/submissions/:id/react", requireLogin, (req, res) => {
+    const user = req.hygoUser;
     const sub = data.submissions.find(s => s.id === req.params.id);
     if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
-    const { emoji, previousEmoji } = req.body || {};
+    const { emoji } = req.body || {};
     if (emoji != null && !REACTION_TYPES.includes(emoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
-    if (previousEmoji != null && !REACTION_TYPES.includes(previousEmoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
 
-    if (!sub.reactions || typeof sub.reactions !== "object") sub.reactions = emptyReactions();
-    if (previousEmoji) sub.reactions[previousEmoji] = Math.max(0, (sub.reactions[previousEmoji] || 0) - 1);
-    if (emoji) sub.reactions[emoji] = (sub.reactions[emoji] || 0) + 1;
+    if (!sub.reactedBy || typeof sub.reactedBy !== "object") sub.reactedBy = {};
+    const current = sub.reactedBy[user.id] || null;
+    const next = current === emoji ? null : emoji;
+    if (next) sub.reactedBy[user.id] = next; else delete sub.reactedBy[user.id];
+
+    sub.reactions = emptyReactions();
+    Object.values(sub.reactedBy).forEach(e => { if (REACTION_TYPES.includes(e)) sub.reactions[e] += 1; });
+
     persist();
     broadcast();
-    res.json({ ok: true, reactions: sub.reactions });
+    res.json({ ok: true, reactions: sub.reactions, myReaction: next });
 });
 
 app.post("/api/hygo/adjustments", requireAdmin, (req, res) => {
@@ -565,7 +689,9 @@ app.get("/api/hygo/export", requireAdmin, async (req, res) => {
 
 app.post("/api/hygo/reset", requireAdmin, async (req, res) => {
     const oldSubmissions = data.submissions;
+    const keepUsers = data.users;
     data = seedData();
+    data.users = keepUsers; // 계정(카카오 로그인)은 점수/미션 초기화와 별개로 유지한다
     persist();
     broadcast();
     res.json({ ok: true });
@@ -616,6 +742,7 @@ app.post("/api/hygo/import", requireAdmin, async (req, res) => {
         adjustments: incoming.adjustments,
         nextTeamId: incoming.nextTeamId || (Math.max(0, ...incoming.teams.map(t => t.id)) + 1),
         campaign: (incoming.campaign && incoming.campaign.start && incoming.campaign.end) ? incoming.campaign : { ...DEFAULT_CAMPAIGN },
+        users: Array.isArray(incoming.users) ? incoming.users : [],
     };
     persist();
     broadcast();
