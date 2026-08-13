@@ -193,7 +193,10 @@ function normalizeCampaign(parsed) {
         parsed.campaign = { ...DEFAULT_CAMPAIGN };
     }
     if (Array.isArray(parsed.submissions)) {
-        parsed.submissions.forEach(s => { if (!Array.isArray(s.comments)) s.comments = []; });
+        parsed.submissions.forEach(s => {
+            if (!Array.isArray(s.comments)) s.comments = [];
+            s.comments.forEach(c => { if (typeof c.reported !== "boolean") c.reported = false; });
+        });
     }
     return parsed;
 }
@@ -378,20 +381,50 @@ app.post("/api/hygo/submissions/:id/comments", (req, res) => {
     const sub = data.submissions.find(s => s.id === req.params.id);
     if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
     const { authorName, text } = req.body || {};
-    if (!authorName || !String(authorName).trim()) return res.status(400).json({ error: "이름을 입력해주세요." });
     if (!text || !String(text).trim()) return res.status(400).json({ error: "댓글 내용을 입력해주세요." });
 
     const comment = {
         id: uid(),
-        authorName: String(authorName).trim().slice(0, 20),
+        authorName: (authorName && String(authorName).trim()) ? String(authorName).trim().slice(0, 20) : "익명",
         text: String(text).trim().slice(0, 200),
         createdAt: new Date().toISOString(),
+        reported: false,
     };
     if (!Array.isArray(sub.comments)) sub.comments = [];
     sub.comments.push(comment);
     persist();
     broadcast();
     res.json({ ok: true, comment });
+});
+
+app.post("/api/hygo/comments/:id/report", (req, res) => {
+    for (const sub of data.submissions) {
+        if (!Array.isArray(sub.comments)) continue;
+        const comment = sub.comments.find(c => c.id === req.params.id);
+        if (comment) {
+            comment.reported = true;
+            comment.reportedAt = new Date().toISOString();
+            persist();
+            broadcast();
+            return res.json({ ok: true });
+        }
+    }
+    res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
+});
+
+app.post("/api/hygo/comments/:id/restore", requireAdmin, (req, res) => {
+    for (const sub of data.submissions) {
+        if (!Array.isArray(sub.comments)) continue;
+        const comment = sub.comments.find(c => c.id === req.params.id);
+        if (comment) {
+            comment.reported = false;
+            delete comment.reportedAt;
+            persist();
+            broadcast();
+            return res.json({ ok: true });
+        }
+    }
+    res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 });
 
 app.delete("/api/hygo/comments/:id", (req, res) => {
