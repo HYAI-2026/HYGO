@@ -147,7 +147,7 @@ function seedData() {
             id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
             participants, memo, photo: placeholderPhoto(m.emoji, teamId + submissions.length),
             status: "approved", createdAt, approvedAt: createdAt,
-            awardedPoints: awarded !== undefined ? awarded : m.points,
+            awardedPoints: awarded !== undefined ? awarded : m.points, comments: [],
         });
     }
 
@@ -169,12 +169,12 @@ function seedData() {
     submissions.push({
         id: uid(), teamId: 5, missionKey: "meal", category: "일상", label: "밥 먹기", emoji: "🍚",
         participants: 3, memo: "저녁 같이 먹었어요", photo: placeholderPhoto("🍚", 50),
-        status: "pending", createdAt: new Date().toISOString(),
+        status: "pending", createdAt: new Date().toISOString(), comments: [],
     });
     submissions.push({
         id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
         participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
-        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15,
+        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [],
     });
 
     const adjustments = [];
@@ -191,6 +191,9 @@ function seedData() {
 function normalizeCampaign(parsed) {
     if (!parsed.campaign || !parsed.campaign.start || !parsed.campaign.end) {
         parsed.campaign = { ...DEFAULT_CAMPAIGN };
+    }
+    if (Array.isArray(parsed.submissions)) {
+        parsed.submissions.forEach(s => { if (!Array.isArray(s.comments)) s.comments = []; });
     }
     return parsed;
 }
@@ -305,6 +308,7 @@ app.post("/api/hygo/submissions", async (req, res) => {
         id, teamId: team.id, missionKey: mission.key, category: mission.category,
         label: mission.label, emoji: mission.emoji, participants: Number(participants),
         memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
+        comments: [],
     };
     if (mission.category === "돌발") {
         const pts = Number(proposedPoints);
@@ -364,9 +368,44 @@ app.post("/api/hygo/submissions/:id/reject", requireAdmin, (req, res) => {
     if (!sub || sub.status !== "pending") return res.status(404).json({ error: "대기 중인 인증을 찾을 수 없습니다." });
     sub.status = "rejected";
     sub.rejectedAt = new Date().toISOString();
+    sub.rejectionReason = ((req.body || {}).reason || "").trim();
     persist();
     broadcast();
     res.json({ ok: true });
+});
+
+app.post("/api/hygo/submissions/:id/comments", (req, res) => {
+    const sub = data.submissions.find(s => s.id === req.params.id);
+    if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
+    const { authorName, text } = req.body || {};
+    if (!authorName || !String(authorName).trim()) return res.status(400).json({ error: "이름을 입력해주세요." });
+    if (!text || !String(text).trim()) return res.status(400).json({ error: "댓글 내용을 입력해주세요." });
+
+    const comment = {
+        id: uid(),
+        authorName: String(authorName).trim().slice(0, 20),
+        text: String(text).trim().slice(0, 200),
+        createdAt: new Date().toISOString(),
+    };
+    if (!Array.isArray(sub.comments)) sub.comments = [];
+    sub.comments.push(comment);
+    persist();
+    broadcast();
+    res.json({ ok: true, comment });
+});
+
+app.delete("/api/hygo/comments/:id", (req, res) => {
+    for (const sub of data.submissions) {
+        if (!Array.isArray(sub.comments)) continue;
+        const idx = sub.comments.findIndex(c => c.id === req.params.id);
+        if (idx !== -1) {
+            sub.comments.splice(idx, 1);
+            persist();
+            broadcast();
+            return res.json({ ok: true });
+        }
+    }
+    res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 });
 
 app.post("/api/hygo/adjustments", requireAdmin, (req, res) => {
@@ -413,10 +452,15 @@ app.delete("/api/hygo/teams/:id", requireAdmin, async (req, res) => {
     }
 });
 
-app.delete("/api/hygo/submissions/:id", requireAdmin, async (req, res) => {
+// 거절된(rejected) 인증은 점수에 영향이 없어서, 팀원이 사유를 확인한 뒤 직접 지울 수 있게
+// 관리자 암호 없이도 삭제를 허용한다. 대기/승인 상태는 그대로 관리자만 지울 수 있다.
+app.delete("/api/hygo/submissions/:id", async (req, res) => {
     const idx = data.submissions.findIndex(s => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
     const sub = data.submissions[idx];
+    if (sub.status !== "rejected" && req.get("x-admin-password") !== ADMIN_PASSWORD) {
+        return res.status(401).json({ error: "관리자 암호가 올바르지 않습니다." });
+    }
     if (sub.status === "approved") {
         const team = data.teams.find(t => t.id === sub.teamId);
         if (team) {
