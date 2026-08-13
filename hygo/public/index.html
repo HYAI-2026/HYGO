@@ -291,6 +291,9 @@
   <button id="photoLightboxClose" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 text-white text-2xl leading-none flex items-center justify-center hover:bg-black/80 transition">&times;</button>
 </div>
 
+<!-- Reaction Picker (카드의 overflow-hidden에 잘리지 않도록 body 최상단에 별도로 띄운다) -->
+<div id="reactionPicker" class="hidden fixed z-[65] glass rounded-xl p-1.5 w-48 shadow-lg"></div>
+
 <!-- Confirm Modal -->
 <div id="confirmModal" class="hidden fixed inset-0 z-[60] modal-backdrop flex items-center justify-center p-4">
   <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
@@ -650,6 +653,7 @@
       populateTeamSelect();
     }
     renderFeed();
+    if (reactionPickerSubId) renderReactionPickerContent();
     if (isAdmin) {
       renderPendingList();
       renderReportedComments();
@@ -1032,7 +1036,8 @@
   }
 
   // ---------- reactions (브라우저당 하나만, 인스타/페북 스타일 요약 + 상세) ----------
-  let expandedReactionPickers = new Set();
+  let reactionPickerSubId = null;
+  let reactionInFlight = new Set();
 
   function getMyReaction(subId){
     try { return (JSON.parse(localStorage.getItem("hygoMyReactions") || "{}"))[subId] || null; }
@@ -1047,54 +1052,79 @@
 
   function renderReactionsBar(sub){
     const reactions = sub.reactions || {};
-    const myReaction = getMyReaction(sub.id);
     const ranked = REACTIONS.map(r => ({ ...r, count: reactions[r.key] || 0 })).filter(r => r.count > 0).sort((a, b) => b.count - a.count);
     const total = ranked.reduce((sum, r) => sum + r.count, 0);
     const topEmojis = ranked.slice(0, 3).map(r => r.emoji).join("");
-    const isOpen = expandedReactionPickers.has(sub.id);
 
     return `
-    <div class="relative" data-reaction-wrap="${sub.id}">
-      <button data-reaction-summary="${sub.id}" class="inline-flex items-center gap-1.5 bg-black/20 hover:bg-black/30 border border-white/10 rounded-full pl-2.5 pr-2.5 py-1 text-xs transition">
-        ${total > 0
-          ? `<span class="text-sm leading-none">${topEmojis}</span><span class="text-slate-400">${total}</span>`
-          : `<span class="text-slate-400">🙂 반응 남기기</span>`}
-      </button>
-      <div class="${isOpen ? "" : "hidden"} absolute z-20 top-full left-0 mt-1.5 glass rounded-xl p-1.5 w-48 shadow-lg">
-        ${REACTIONS.map(r => {
-          const count = reactions[r.key] || 0;
-          const mine = myReaction === r.key;
-          return `
-          <button data-react="${sub.id}" data-emoji="${r.key}" class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition ${mine ? "bg-fuchsia-500/20 text-fuchsia-200" : "text-slate-300 hover:bg-white/5"}">
-            <span>${r.emoji} ${r.label}</span>
-            <span class="${mine ? "text-fuchsia-300 font-bold" : "text-slate-500"}">${count}</span>
-          </button>`;
-        }).join("")}
-      </div>
-    </div>`;
+    <button data-reaction-summary="${sub.id}" class="inline-flex items-center gap-1.5 bg-black/20 hover:bg-black/30 border border-white/10 rounded-full pl-2.5 pr-2.5 py-1 text-xs transition">
+      ${total > 0
+        ? `<span class="text-sm leading-none">${topEmojis}</span><span class="text-slate-400">${total}</span>`
+        : `<span class="text-slate-400">🙂 반응 남기기</span>`}
+    </button>`;
   }
 
-  function toggleReactionPicker(subId){
-    if (expandedReactionPickers.has(subId)) {
-      expandedReactionPickers.clear();
-    } else {
-      expandedReactionPickers.clear();
-      expandedReactionPickers.add(subId);
-    }
-    renderFeed();
+  // 카드에 overflow-hidden이 걸려있어 드롭다운을 카드 안에 두면 잘린다.
+  // 그래서 body 최상단의 공용 팝업 하나를 버튼 위치에 맞춰 띄우는 방식으로 처리한다.
+  function renderReactionPickerContent(){
+    const sub = data.submissions.find(s => s.id === reactionPickerSubId);
+    const popup = document.getElementById("reactionPicker");
+    if (!sub){ closeReactionPicker(); return; }
+    const reactions = sub.reactions || {};
+    const myReaction = getMyReaction(sub.id);
+    popup.innerHTML = REACTIONS.map(r => {
+      const count = reactions[r.key] || 0;
+      const mine = myReaction === r.key;
+      return `
+      <button data-react="${sub.id}" data-emoji="${r.key}" class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition ${mine ? "bg-fuchsia-500/20 text-fuchsia-200" : "text-slate-300 hover:bg-white/5"}">
+        <span>${r.emoji} ${r.label}</span>
+        <span class="${mine ? "text-fuchsia-300 font-bold" : "text-slate-500"}">${count}</span>
+      </button>`;
+    }).join("");
+    popup.querySelectorAll("[data-react]").forEach(btn => btn.addEventListener("click", () => handleReactionSelect(btn.dataset.react, btn.dataset.emoji)));
   }
 
+  function openReactionPicker(subId, anchorBtn){
+    reactionPickerSubId = subId;
+    const popup = document.getElementById("reactionPicker");
+    const rect = anchorBtn.getBoundingClientRect();
+    popup.style.top = `${rect.bottom + 6}px`;
+    popup.style.left = `${Math.min(rect.left, window.innerWidth - 200)}px`;
+    popup.classList.remove("hidden");
+    renderReactionPickerContent();
+  }
+  function closeReactionPicker(){
+    reactionPickerSubId = null;
+    document.getElementById("reactionPicker").classList.add("hidden");
+  }
+  function toggleReactionPicker(subId, anchorBtn){
+    if (reactionPickerSubId === subId) closeReactionPicker();
+    else openReactionPicker(subId, anchorBtn);
+  }
+
+  // 같은 게시물에 대한 요청이 끝나기 전에 또 누르면 무시한다 — 안 그러면 previousEmoji가
+  // 서버의 실제 상태와 어긋나서 카운트가 꼬인다(빠르게 여러 번 누를 때 특히).
   async function handleReactionSelect(subId, emoji){
+    if (reactionInFlight.has(subId)) return;
+    reactionInFlight.add(subId);
     const previous = getMyReaction(subId);
     const next = previous === emoji ? null : emoji;
     setMyReaction(subId, next);
+    if (reactionPickerSubId === subId) renderReactionPickerContent();
     renderFeed();
     try {
-      await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: next, previousEmoji: previous });
+      const res = await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: next, previousEmoji: previous });
+      const sub = data.submissions.find(s => s.id === subId);
+      if (sub) sub.reactions = res.reactions;
+      if (reactionPickerSubId === subId) renderReactionPickerContent();
+      renderFeed();
     } catch (err) {
       setMyReaction(subId, previous);
+      if (reactionPickerSubId === subId) renderReactionPickerContent();
       renderFeed();
       toast(err.message, "error");
+    } finally {
+      reactionInFlight.delete(subId);
     }
   }
 
@@ -1224,8 +1254,10 @@
       el.querySelectorAll("[data-delete-feed]").forEach(btn => btn.addEventListener("click", () => deleteFeedItem(btn.dataset.deleteFeed)));
     }
     el.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
-    el.querySelectorAll("[data-reaction-summary]").forEach(btn => btn.addEventListener("click", () => toggleReactionPicker(btn.dataset.reactionSummary)));
-    el.querySelectorAll("[data-react]").forEach(btn => btn.addEventListener("click", () => handleReactionSelect(btn.dataset.react, btn.dataset.emoji)));
+    el.querySelectorAll("[data-reaction-summary]").forEach(btn => btn.addEventListener("click", e => {
+      e.stopPropagation();
+      toggleReactionPicker(btn.dataset.reactionSummary, btn);
+    }));
     el.querySelectorAll("[data-toggle-comments]").forEach(btn => btn.addEventListener("click", () => {
       const id = btn.dataset.toggleComments;
       if (expandedComments.has(id)) expandedComments.delete(id); else expandedComments.add(id);
@@ -1567,11 +1599,11 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
 
     document.addEventListener("click", e => {
-      if (expandedReactionPickers.size && !e.target.closest("[data-reaction-wrap]")) {
-        expandedReactionPickers.clear();
-        renderFeed();
+      if (reactionPickerSubId && !e.target.closest("#reactionPicker") && !e.target.closest("[data-reaction-summary]")) {
+        closeReactionPicker();
       }
     });
+    window.addEventListener("scroll", () => { if (reactionPickerSubId) closeReactionPicker(); }, { passive: true });
 
     document.getElementById("adminLoginBtn").addEventListener("click", adminLogin);
     document.getElementById("adminPassword").addEventListener("keydown", e => { if (e.key === "Enter") adminLogin(); });
