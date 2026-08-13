@@ -115,6 +115,9 @@ const MISSIONS = [
 ];
 const missionByKey = key => MISSIONS.find(m => m.key === key);
 
+const REACTION_TYPES = ["love", "funny", "fire", "annoyed", "clap"];
+const emptyReactions = () => ({ love: 0, funny: 0, fire: 0, annoyed: 0, clap: 0 });
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const todayKey = iso => iso.slice(0, 10);
 
@@ -147,7 +150,7 @@ function seedData() {
             id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
             participants, memo, photo: placeholderPhoto(m.emoji, teamId + submissions.length),
             status: "approved", createdAt, approvedAt: createdAt,
-            awardedPoints: awarded !== undefined ? awarded : m.points, comments: [],
+            awardedPoints: awarded !== undefined ? awarded : m.points, comments: [], reactions: emptyReactions(),
         });
     }
 
@@ -169,12 +172,12 @@ function seedData() {
     submissions.push({
         id: uid(), teamId: 5, missionKey: "meal", category: "일상", label: "밥 먹기", emoji: "🍚",
         participants: 3, memo: "저녁 같이 먹었어요", photo: placeholderPhoto("🍚", 50),
-        status: "pending", createdAt: new Date().toISOString(), comments: [],
+        status: "pending", createdAt: new Date().toISOString(), comments: [], reactions: emptyReactions(),
     });
     submissions.push({
         id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
         participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
-        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [],
+        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [], reactions: emptyReactions(),
     });
 
     const adjustments = [];
@@ -196,6 +199,8 @@ function normalizeCampaign(parsed) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
             s.comments.forEach(c => { if (typeof c.reported !== "boolean") c.reported = false; });
+            if (!s.reactions || typeof s.reactions !== "object") s.reactions = emptyReactions();
+            REACTION_TYPES.forEach(key => { if (typeof s.reactions[key] !== "number") s.reactions[key] = 0; });
         });
     }
     return parsed;
@@ -311,7 +316,7 @@ app.post("/api/hygo/submissions", async (req, res) => {
         id, teamId: team.id, missionKey: mission.key, category: mission.category,
         label: mission.label, emoji: mission.emoji, participants: Number(participants),
         memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
-        comments: [],
+        comments: [], reactions: emptyReactions(),
     };
     if (mission.category === "돌발") {
         const pts = Number(proposedPoints);
@@ -439,6 +444,20 @@ app.delete("/api/hygo/comments/:id", (req, res) => {
         }
     }
     res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
+});
+
+app.post("/api/hygo/submissions/:id/react", (req, res) => {
+    const sub = data.submissions.find(s => s.id === req.params.id);
+    if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
+    const { emoji, action } = req.body || {};
+    if (!REACTION_TYPES.includes(emoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
+
+    if (!sub.reactions || typeof sub.reactions !== "object") sub.reactions = emptyReactions();
+    const current = sub.reactions[emoji] || 0;
+    sub.reactions[emoji] = action === "remove" ? Math.max(0, current - 1) : current + 1;
+    persist();
+    broadcast();
+    res.json({ ok: true, reactions: sub.reactions });
 });
 
 app.post("/api/hygo/adjustments", requireAdmin, (req, res) => {

@@ -503,6 +503,14 @@
   ];
   const missionByKey = k => MISSIONS.find(m => m.key === k);
 
+  const REACTIONS = [
+    { key: "love",    emoji: "❤️", label: "좋아요" },
+    { key: "funny",   emoji: "🤣", label: "웃겨요" },
+    { key: "fire",    emoji: "🔥", label: "멋져요" },
+    { key: "annoyed", emoji: "🤦‍♂️", label: "킹받아요" },
+    { key: "clap",    emoji: "👏", label: "완벽해요" },
+  ];
+
   const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
   const DAILY_CASUAL_CAP = 15;
   const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -1023,6 +1031,50 @@
     }
   }
 
+  // ---------- reactions ----------
+  function getMyReactions(){
+    try { return new Set(JSON.parse(localStorage.getItem("hygoMyReactions") || "[]")); }
+    catch (e) { return new Set(); }
+  }
+  function hasMyReaction(subId, key){ return getMyReactions().has(`${subId}:${key}`); }
+  function toggleMyReaction(subId, key){
+    const set = getMyReactions();
+    const k = `${subId}:${key}`;
+    const wasActive = set.has(k);
+    if (wasActive) set.delete(k); else set.add(k);
+    localStorage.setItem("hygoMyReactions", JSON.stringify([...set]));
+    return !wasActive;
+  }
+
+  function renderReactionsBar(sub){
+    const reactions = sub.reactions || {};
+    return `
+    <div class="flex flex-wrap gap-1.5 pt-0.5">
+      ${REACTIONS.map(r => {
+        const count = reactions[r.key] || 0;
+        const active = hasMyReaction(sub.id, r.key);
+        return `
+        <button data-react="${sub.id}" data-emoji="${r.key}" title="${r.label}"
+          class="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border transition
+            ${active ? "bg-fuchsia-500/25 border-fuchsia-400/50 text-fuchsia-200" : "bg-black/20 border-white/10 text-slate-400 hover:border-white/25"}">
+          <span>${r.emoji}</span><span>${count}</span>
+        </button>`;
+      }).join("")}
+    </div>`;
+  }
+
+  async function handleReactionClick(subId, key){
+    const nowActive = toggleMyReaction(subId, key);
+    renderFeed();
+    try {
+      await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: key, action: nowActive ? "add" : "remove" });
+    } catch (err) {
+      toggleMyReaction(subId, key);
+      renderFeed();
+      toast(err.message, "error");
+    }
+  }
+
   // ---------- comments ----------
   function getMyComments(){
     try { return new Set(JSON.parse(localStorage.getItem("hygoMyComments") || "[]")); }
@@ -1135,6 +1187,7 @@
           <p class="text-sm font-semibold text-white">${s.emoji} ${escapeHtml(s.label)}</p>
           <p class="text-xs text-slate-400 line-clamp-2">${escapeHtml(s.memo || "")}</p>
           <p class="text-[10px] text-slate-500">참여 ${s.participants}명 · ${fmtDate(s.approvedAt || s.createdAt)}</p>
+          ${renderReactionsBar(s)}
           ${renderCommentsSection(s)}
         </div>
       </div>`;
@@ -1148,6 +1201,7 @@
       el.querySelectorAll("[data-delete-feed]").forEach(btn => btn.addEventListener("click", () => deleteFeedItem(btn.dataset.deleteFeed)));
     }
     el.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
+    el.querySelectorAll("[data-react]").forEach(btn => btn.addEventListener("click", () => handleReactionClick(btn.dataset.react, btn.dataset.emoji)));
     el.querySelectorAll("[data-toggle-comments]").forEach(btn => btn.addEventListener("click", () => {
       const id = btn.dataset.toggleComments;
       if (expandedComments.has(id)) expandedComments.delete(id); else expandedComments.add(id);
