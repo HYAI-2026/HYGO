@@ -352,13 +352,21 @@ app.get("/api/hygo/auth/kakao/callback", async (req, res) => {
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: tokenParams.toString(),
         });
-        if (!tokenRes.ok) throw new Error(`token exchange failed (${tokenRes.status})`);
+        if (!tokenRes.ok) {
+            const errBody = await tokenRes.text().catch(() => "");
+            console.warn("[hygo] kakao token exchange failed:", tokenRes.status, errBody);
+            throw new Error(`token_exchange_${tokenRes.status}`);
+        }
         const tokenJson = await tokenRes.json();
 
         const userRes = await fetch(KAKAO_USERINFO_URL, {
             headers: { Authorization: `Bearer ${tokenJson.access_token}` },
         });
-        if (!userRes.ok) throw new Error(`user info fetch failed (${userRes.status})`);
+        if (!userRes.ok) {
+            const errBody = await userRes.text().catch(() => "");
+            console.warn("[hygo] kakao userinfo fetch failed:", userRes.status, errBody);
+            throw new Error(`userinfo_${userRes.status}`);
+        }
         const userJson = await userRes.json();
 
         const kakaoId = String(userJson.id);
@@ -382,7 +390,7 @@ app.get("/api/hygo/auth/kakao/callback", async (req, res) => {
         res.redirect("/");
     } catch (e) {
         console.warn("[hygo] kakao login failed:", e.message);
-        res.redirect("/?loginError=1");
+        res.redirect(`/?loginError=1&reason=${encodeURIComponent(e.message)}`);
     }
 });
 

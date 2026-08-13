@@ -1707,7 +1707,8 @@
     setInterval(tickClock, 30000);
 
     if (new URLSearchParams(location.search).has("loginError")) {
-      toast("카카오 로그인에 실패했어요. 다시 시도해주세요.", "error");
+      const reason = new URLSearchParams(location.search).get("reason");
+      toast(`카카오 로그인에 실패했어요${reason ? ` (${reason})` : ""}. 다시 시도해주세요.`, "error");
       history.replaceState(null, "", location.pathname);
     }
 
