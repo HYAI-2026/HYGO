@@ -446,15 +446,19 @@ app.delete("/api/hygo/comments/:id", (req, res) => {
     res.status(404).json({ error: "댓글을 찾을 수 없습니다." });
 });
 
+// 브라우저(계정)당 반응 하나만 허용한다. 클라이언트가 이전에 눌렀던 반응(previousEmoji)과
+// 새로 선택한 반응(emoji)을 같이 보내면, 서버는 이전 것을 -1, 새 것을 +1 해서 원자적으로 전환한다.
+// 둘 중 하나는 null일 수 있다 (emoji=null: 반응 취소, previousEmoji=null: 첫 반응).
 app.post("/api/hygo/submissions/:id/react", (req, res) => {
     const sub = data.submissions.find(s => s.id === req.params.id);
     if (!sub) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
-    const { emoji, action } = req.body || {};
-    if (!REACTION_TYPES.includes(emoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
+    const { emoji, previousEmoji } = req.body || {};
+    if (emoji != null && !REACTION_TYPES.includes(emoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
+    if (previousEmoji != null && !REACTION_TYPES.includes(previousEmoji)) return res.status(400).json({ error: "올바르지 않은 반응입니다." });
 
     if (!sub.reactions || typeof sub.reactions !== "object") sub.reactions = emptyReactions();
-    const current = sub.reactions[emoji] || 0;
-    sub.reactions[emoji] = action === "remove" ? Math.max(0, current - 1) : current + 1;
+    if (previousEmoji) sub.reactions[previousEmoji] = Math.max(0, (sub.reactions[previousEmoji] || 0) - 1);
+    if (emoji) sub.reactions[emoji] = (sub.reactions[emoji] || 0) + 1;
     persist();
     broadcast();
     res.json({ ok: true, reactions: sub.reactions });

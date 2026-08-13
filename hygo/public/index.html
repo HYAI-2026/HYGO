@@ -1031,45 +1031,68 @@
     }
   }
 
-  // ---------- reactions ----------
-  function getMyReactions(){
-    try { return new Set(JSON.parse(localStorage.getItem("hygoMyReactions") || "[]")); }
-    catch (e) { return new Set(); }
+  // ---------- reactions (브라우저당 하나만, 인스타/페북 스타일 요약 + 상세) ----------
+  let expandedReactionPickers = new Set();
+
+  function getMyReaction(subId){
+    try { return (JSON.parse(localStorage.getItem("hygoMyReactions") || "{}"))[subId] || null; }
+    catch (e) { return null; }
   }
-  function hasMyReaction(subId, key){ return getMyReactions().has(`${subId}:${key}`); }
-  function toggleMyReaction(subId, key){
-    const set = getMyReactions();
-    const k = `${subId}:${key}`;
-    const wasActive = set.has(k);
-    if (wasActive) set.delete(k); else set.add(k);
-    localStorage.setItem("hygoMyReactions", JSON.stringify([...set]));
-    return !wasActive;
+  function setMyReaction(subId, emoji){
+    let map = {};
+    try { map = JSON.parse(localStorage.getItem("hygoMyReactions") || "{}"); } catch (e) { /* ignore */ }
+    if (emoji) map[subId] = emoji; else delete map[subId];
+    localStorage.setItem("hygoMyReactions", JSON.stringify(map));
   }
 
   function renderReactionsBar(sub){
     const reactions = sub.reactions || {};
+    const myReaction = getMyReaction(sub.id);
+    const ranked = REACTIONS.map(r => ({ ...r, count: reactions[r.key] || 0 })).filter(r => r.count > 0).sort((a, b) => b.count - a.count);
+    const total = ranked.reduce((sum, r) => sum + r.count, 0);
+    const topEmojis = ranked.slice(0, 3).map(r => r.emoji).join("");
+    const isOpen = expandedReactionPickers.has(sub.id);
+
     return `
-    <div class="flex flex-wrap gap-1.5 pt-0.5">
-      ${REACTIONS.map(r => {
-        const count = reactions[r.key] || 0;
-        const active = hasMyReaction(sub.id, r.key);
-        return `
-        <button data-react="${sub.id}" data-emoji="${r.key}" title="${r.label}"
-          class="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border transition
-            ${active ? "bg-fuchsia-500/25 border-fuchsia-400/50 text-fuchsia-200" : "bg-black/20 border-white/10 text-slate-400 hover:border-white/25"}">
-          <span>${r.emoji}</span><span>${count}</span>
-        </button>`;
-      }).join("")}
+    <div class="relative" data-reaction-wrap="${sub.id}">
+      <button data-reaction-summary="${sub.id}" class="inline-flex items-center gap-1.5 bg-black/20 hover:bg-black/30 border border-white/10 rounded-full pl-2.5 pr-2.5 py-1 text-xs transition">
+        ${total > 0
+          ? `<span class="text-sm leading-none">${topEmojis}</span><span class="text-slate-400">${total}</span>`
+          : `<span class="text-slate-400">🙂 반응 남기기</span>`}
+      </button>
+      <div class="${isOpen ? "" : "hidden"} absolute z-20 top-full left-0 mt-1.5 glass rounded-xl p-1.5 w-48 shadow-lg">
+        ${REACTIONS.map(r => {
+          const count = reactions[r.key] || 0;
+          const mine = myReaction === r.key;
+          return `
+          <button data-react="${sub.id}" data-emoji="${r.key}" class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition ${mine ? "bg-fuchsia-500/20 text-fuchsia-200" : "text-slate-300 hover:bg-white/5"}">
+            <span>${r.emoji} ${r.label}</span>
+            <span class="${mine ? "text-fuchsia-300 font-bold" : "text-slate-500"}">${count}</span>
+          </button>`;
+        }).join("")}
+      </div>
     </div>`;
   }
 
-  async function handleReactionClick(subId, key){
-    const nowActive = toggleMyReaction(subId, key);
+  function toggleReactionPicker(subId){
+    if (expandedReactionPickers.has(subId)) {
+      expandedReactionPickers.clear();
+    } else {
+      expandedReactionPickers.clear();
+      expandedReactionPickers.add(subId);
+    }
+    renderFeed();
+  }
+
+  async function handleReactionSelect(subId, emoji){
+    const previous = getMyReaction(subId);
+    const next = previous === emoji ? null : emoji;
+    setMyReaction(subId, next);
     renderFeed();
     try {
-      await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: key, action: nowActive ? "add" : "remove" });
+      await apiSend("POST", `/api/hygo/submissions/${subId}/react`, { emoji: next, previousEmoji: previous });
     } catch (err) {
-      toggleMyReaction(subId, key);
+      setMyReaction(subId, previous);
       renderFeed();
       toast(err.message, "error");
     }
@@ -1201,7 +1224,8 @@
       el.querySelectorAll("[data-delete-feed]").forEach(btn => btn.addEventListener("click", () => deleteFeedItem(btn.dataset.deleteFeed)));
     }
     el.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
-    el.querySelectorAll("[data-react]").forEach(btn => btn.addEventListener("click", () => handleReactionClick(btn.dataset.react, btn.dataset.emoji)));
+    el.querySelectorAll("[data-reaction-summary]").forEach(btn => btn.addEventListener("click", () => toggleReactionPicker(btn.dataset.reactionSummary)));
+    el.querySelectorAll("[data-react]").forEach(btn => btn.addEventListener("click", () => handleReactionSelect(btn.dataset.react, btn.dataset.emoji)));
     el.querySelectorAll("[data-toggle-comments]").forEach(btn => btn.addEventListener("click", () => {
       const id = btn.dataset.toggleComments;
       if (expandedComments.has(id)) expandedComments.delete(id); else expandedComments.add(id);
@@ -1541,6 +1565,13 @@
     document.getElementById("photoLightboxClose").addEventListener("click", closeLightbox);
     document.getElementById("photoLightbox").addEventListener("click", e => { if (e.target.id === "photoLightbox") closeLightbox(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
+
+    document.addEventListener("click", e => {
+      if (expandedReactionPickers.size && !e.target.closest("[data-reaction-wrap]")) {
+        expandedReactionPickers.clear();
+        renderFeed();
+      }
+    });
 
     document.getElementById("adminLoginBtn").addEventListener("click", adminLogin);
     document.getElementById("adminPassword").addEventListener("keydown", e => { if (e.key === "Enter") adminLogin(); });
