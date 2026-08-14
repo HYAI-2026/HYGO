@@ -233,6 +233,9 @@ function normalizeCampaign(parsed) {
     if (!Array.isArray(parsed.missions) || !parsed.missions.length) parsed.missions = DEFAULT_MISSIONS.map(m => ({ ...m }));
     parsed.missions.forEach(m => { if (m.points == null) m.points = 0; });
     if (!Array.isArray(parsed.applications)) parsed.applications = [];
+    // 탈퇴 등으로 사용자가 사라졌는데 신청서만 남아있는 경우를 정리한다 (통계 집계가 부풀려지는 원인이었음).
+    const existingUserIds = new Set(parsed.users.map(u => u.id));
+    parsed.applications = parsed.applications.filter(a => existingUserIds.has(a.userId));
     if (!Array.isArray(parsed.activityOptions) || !parsed.activityOptions.length) parsed.activityOptions = DEFAULT_ACTIVITY_OPTIONS.slice();
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
@@ -535,6 +538,7 @@ app.get("/api/hygo/applications/me", requireLogin, (req, res) => {
 
 app.delete("/api/hygo/auth/withdraw", requireLogin, (req, res) => {
     data.users = data.users.filter(u => u.id !== req.hygoUser.id);
+    data.applications = data.applications.filter(a => a.userId !== req.hygoUser.id);
     persist();
     broadcast();
     res.clearCookie("hygo_uid");
@@ -574,6 +578,7 @@ app.delete("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
     const exists = data.users.some(u => u.id === req.params.id);
     if (!exists) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
     data.users = data.users.filter(u => u.id !== req.params.id);
+    data.applications = data.applications.filter(a => a.userId !== req.params.id);
     persist();
     broadcast();
     res.json({ ok: true });
