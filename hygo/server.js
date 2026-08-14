@@ -123,7 +123,7 @@ const DEFAULT_MISSIONS = [
     { key: "karaoke", category: "일상", emoji: "🎤", label: "노래방 가기", points: 5 },
     { key: "study", category: "일상", emoji: "📚", label: "공부/코딩하기", points: 5 },
     { key: "photo", category: "일상", emoji: "📸", label: "인증샷 찍기", points: 3 },
-    { key: "surprise", category: "돌발", emoji: "🎯", label: "주차별 돌발 미션", points: null },
+    { key: "surprise", category: "돌발", emoji: "🎯", label: "주차별 돌발 미션", points: 15 },
 ];
 const MISSION_CATEGORIES = ["일상", "돌발"];
 
@@ -189,7 +189,7 @@ function seedData() {
     submissions.push({
         id: uid(), teamId: 6, missionKey: "surprise", category: "돌발", label: "주차별 돌발 미션", emoji: "🎯",
         participants: 5, memo: "1주차 돌발미션 참여!", photo: placeholderPhoto("🎯", 60),
-        status: "pending", createdAt: new Date().toISOString(), proposedPoints: 15, comments: [], reactions: emptyReactions(), reactedBy: {},
+        status: "pending", createdAt: new Date().toISOString(), comments: [], reactions: emptyReactions(), reactedBy: {},
     });
 
     const adjustments = [];
@@ -210,6 +210,7 @@ function normalizeCampaign(parsed) {
     if (!Array.isArray(parsed.users)) parsed.users = [];
     parsed.users.forEach(u => { if (typeof u.registered !== "boolean") u.registered = false; });
     if (!Array.isArray(parsed.missions) || !parsed.missions.length) parsed.missions = DEFAULT_MISSIONS.map(m => ({ ...m }));
+    parsed.missions.forEach(m => { if (m.points == null) m.points = 0; });
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
@@ -455,6 +456,27 @@ app.get("/api/hygo/admin/users", requireAdmin, (req, res) => {
     res.json({ users: data.users });
 });
 
+app.put("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
+    const user = data.users.find(u => u.id === req.params.id);
+    if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    const { name, studentId, department, birthdate, phone, gender } = req.body || {};
+    const fields = { name, studentId, department, birthdate, phone, gender };
+    for (const v of Object.values(fields)) {
+        if (!v || !String(v).trim()) return res.status(400).json({ error: "모든 항목을 입력해주세요." });
+    }
+    if (!GENDER_OPTIONS.includes(gender)) return res.status(400).json({ error: "올바르지 않은 성별입니다." });
+
+    user.name = String(name).trim();
+    user.studentId = String(studentId).trim();
+    user.department = String(department).trim();
+    user.birthdate = String(birthdate).trim();
+    user.phone = String(phone).trim();
+    user.gender = gender;
+    persist();
+    broadcast();
+    res.json({ ok: true, user });
+});
+
 app.delete("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
     const exists = data.users.some(u => u.id === req.params.id);
     if (!exists) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
@@ -483,7 +505,7 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
     const user = req.hygoUser;
     if (!user.registered) return res.status(400).json({ error: "먼저 회원가입(인적사항 입력)을 완료해주세요." });
     if (!user.teamId) return res.status(400).json({ error: "아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요." });
-    const { missionKey, participants, memo, photo, proposedPoints } = req.body || {};
+    const { missionKey, participants, memo, photo } = req.body || {};
     const mission = missionByKey(missionKey);
     const team = data.teams.find(t => t.id === user.teamId);
 
@@ -504,13 +526,6 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
         memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
         authorId: user.id, comments: [], reactions: emptyReactions(), reactedBy: {},
     };
-    if (mission.category === "돌발") {
-        const pts = Number(proposedPoints);
-        if (!Number.isFinite(pts) || pts <= 0) {
-            return res.status(400).json({ error: "돌발 미션 배점을 입력해주세요." });
-        }
-        sub.proposedPoints = pts;
-    }
 
     try {
         await savePhoto(id, photo);
@@ -715,7 +730,7 @@ app.post("/api/hygo/admin/missions", requireAdmin, (req, res) => {
 
     const mission = {
         key: cleanKey, category, label: String(label).trim(), emoji: String(emoji || "🎯").trim(),
-        points: category === "돌발" ? null : (Number(points) || 0),
+        points: Number(points) || 0,
     };
     data.missions.push(mission);
     persist();
@@ -737,11 +752,7 @@ app.put("/api/hygo/admin/missions/:key", requireAdmin, (req, res) => {
         mission.label = String(label).trim();
     }
     if (emoji !== undefined && String(emoji).trim()) mission.emoji = String(emoji).trim();
-    if (mission.category === "돌발") {
-        mission.points = null;
-    } else if (points !== undefined) {
-        mission.points = Number(points) || 0;
-    }
+    if (points !== undefined) mission.points = Number(points) || 0;
 
     persist();
     broadcast();

@@ -168,11 +168,6 @@
         <select id="missionSelect" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
       </div>
 
-      <div id="surprisePointsWrap" class="hidden">
-        <label class="block text-xs font-semibold text-slate-400 mb-1.5">돌발 미션 배점 (관리자 공지 점수를 입력하세요)</label>
-        <input id="surprisePoints" type="number" min="1" step="1" value="10" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
-      </div>
-
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1.5">참여 인원 <span class="text-slate-500 font-normal">(최소 3명)</span></label>
         <input id="participantCount" type="number" min="1" step="1" value="3" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
@@ -277,7 +272,7 @@
             </select>
           </div>
           <input id="newMissionLabel" type="text" maxlength="20" placeholder="미션 이름 (예: 보드게임 하기)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
-          <input id="newMissionPoints" type="number" min="0" step="1" placeholder="배점 (돌발 미션은 참가자가 직접 입력하므로 비워두세요)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <input id="newMissionPoints" type="number" min="0" step="1" placeholder="배점" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
           <button id="addMissionBtn" class="w-full py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition">+ 미션 추가</button>
         </div>
       </div>
@@ -354,7 +349,7 @@
 <div id="reactionPicker" class="hidden fixed z-[65] glass rounded-xl p-1.5 w-48 shadow-lg"></div>
 
 <!-- Confirm Modal -->
-<div id="confirmModal" class="hidden fixed inset-0 z-[60] modal-backdrop flex items-center justify-center p-4">
+<div id="confirmModal" class="hidden fixed inset-0 z-[71] modal-backdrop flex items-center justify-center p-4">
   <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
     <div>
       <h3 id="confirmModalTitle" class="font-bold text-white">확인</h3>
@@ -368,7 +363,7 @@
 </div>
 
 <!-- Prompt Modal (텍스트 입력이 필요한 확인창) -->
-<div id="promptModal" class="hidden fixed inset-0 z-[60] modal-backdrop flex items-center justify-center p-4">
+<div id="promptModal" class="hidden fixed inset-0 z-[71] modal-backdrop flex items-center justify-center p-4">
   <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
     <div>
       <h3 id="promptModalTitle" class="font-bold text-white">입력</h3>
@@ -462,6 +457,52 @@
       <button type="submit" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">저장하기</button>
     </form>
     <button id="withdrawBtn" class="w-full py-2.5 rounded-xl font-bold text-xs bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">회원 탈퇴</button>
+  </div>
+</div>
+
+<!-- Admin Member Detail/Edit Modal -->
+<div id="memberModal" class="hidden fixed inset-0 z-[69] modal-backdrop flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between">
+      <h3 id="memberModalTitle" class="font-bold text-white">회원 정보</h3>
+      <button id="memberModalClose" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <form id="memberForm" class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">이름</label>
+        <input id="memName" type="text" maxlength="20" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">학번</label>
+        <input id="memStudentId" type="text" maxlength="20" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">학과</label>
+        <input id="memDepartment" type="text" maxlength="30" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">생년월일</label>
+        <input id="memBirthdate" type="date" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">전화번호</label>
+        <input id="memPhone" type="tel" maxlength="20" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">성별</label>
+        <select id="memGender" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <option value="">선택하세요</option>
+          <option value="남성">남성</option>
+          <option value="여성">여성</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">소속 팀</label>
+        <select id="memTeam" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></select>
+      </div>
+      <button type="submit" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">저장하기</button>
+    </form>
+    <button id="memberWithdrawBtn" class="w-full py-2.5 rounded-xl font-bold text-xs bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">회원 강제 탈퇴</button>
   </div>
 </div>
 
@@ -1179,15 +1220,9 @@
     (data.missions || []).forEach(m => groups[m.category].push(m));
     sel.innerHTML = Object.entries(groups).map(([cat, list]) => `
       <optgroup label="${cat === "일상" ? "🌤️ 일상 미션" : "🎯 돌발 미션"}">
-        ${list.map(m => `<option value="${m.key}">${m.emoji} ${m.label}${m.points ? ` (${m.points}점)` : " (배점 유동)"}</option>`).join("")}
+        ${list.map(m => `<option value="${m.key}">${m.emoji} ${m.label} (${m.points}점)</option>`).join("")}
       </optgroup>`).join("");
     if ((data.missions || []).some(m => m.key === prevValue)) sel.value = prevValue;
-    toggleSurpriseField();
-  }
-  function toggleSurpriseField(){
-    const key = document.getElementById("missionSelect").value;
-    const wrap = document.getElementById("surprisePointsWrap");
-    wrap.classList.toggle("hidden", missionByKey(key)?.category !== "돌발");
   }
 
   function compressImage(file){
@@ -1247,7 +1282,6 @@
     if (!currentUser.registered){ toast("먼저 회원가입(인적사항 입력)을 완료해주세요.", "error"); showRegisterGate(); return; }
     if (!currentUser.teamId){ toast("아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요.", "error"); return; }
     const missionKey = document.getElementById("missionSelect").value;
-    const mission = missionByKey(missionKey);
     const participants = Number(document.getElementById("participantCount").value);
     const memo = document.getElementById("memoInput").value.trim();
 
@@ -1269,11 +1303,6 @@
     }
 
     const payload = { missionKey, participants, memo, photo: currentPhotoDataUrl };
-    if (mission.category === "돌발"){
-      const pts = Number(document.getElementById("surprisePoints").value) || 0;
-      if (pts <= 0){ toast("돌발 미션 배점을 입력해주세요.", "error"); return; }
-      payload.proposedPoints = pts;
-    }
 
     const btn = document.getElementById("submitBtn");
     btn.disabled = true;
@@ -1604,52 +1633,85 @@
       return;
     }
 
-    const teamOptions = t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
-    el.innerHTML = registered.map(u => `
-      <div class="bg-black/20 rounded-lg px-3 py-2.5 border border-white/5 flex flex-col sm:flex-row sm:items-center gap-2.5">
-        <div class="flex items-center gap-2.5 min-w-0 flex-1">
-          <img src="${u.profileImage || "/icons/icon-192.png"}" class="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0">
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-white truncate">${escapeHtml(u.name)} <span class="text-slate-500 font-normal">(${escapeHtml(u.nickname)})</span></p>
-            <p class="text-[11px] text-slate-500 truncate">${escapeHtml(u.studentId)} · ${escapeHtml(u.department)} · ${escapeHtml(u.gender)} · ${escapeHtml(u.birthdate)} · ${escapeHtml(u.phone)}</p>
-          </div>
+    el.innerHTML = registered.map(u => {
+      const team = u.teamId != null ? data.teams.find(t => t.id === u.teamId) : null;
+      return `
+      <button type="button" data-view-user="${u.id}" class="w-full text-left bg-black/20 rounded-lg px-3 py-2.5 border border-white/5 hover:bg-white/5 hover:border-fuchsia-400/30 transition flex items-center gap-2.5">
+        <img src="${u.profileImage || "/icons/icon-192.png"}" class="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0 object-cover">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-white truncate">${escapeHtml(u.name)} <span class="text-slate-500 font-normal">(${escapeHtml(u.nickname)})</span></p>
+          <p class="text-[11px] text-slate-500 truncate">${team ? escapeHtml(team.name) : "미배정"} · ${escapeHtml(u.department)}</p>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0">
-          <select data-assign-team="${u.id}" class="bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
-            <option value="">미배정</option>
-            ${data.teams.map(teamOptions).join("")}
-          </select>
-          <button data-force-withdraw="${u.id}" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">탈퇴</button>
-        </div>
-      </div>`).join("");
+        <span class="text-slate-500 shrink-0">›</span>
+      </button>`;
+    }).join("");
 
-    el.querySelectorAll("[data-assign-team]").forEach(sel => {
-      const u = registered.find(u => u.id === sel.dataset.assignTeam);
-      sel.value = u && u.teamId != null ? String(u.teamId) : "";
-      sel.addEventListener("change", () => assignUserTeam(sel.dataset.assignTeam, sel.value));
-    });
-    el.querySelectorAll("[data-force-withdraw]").forEach(btn => {
-      const u = registered.find(u => u.id === btn.dataset.forceWithdraw);
-      btn.addEventListener("click", () => forceWithdrawUser(u));
-    });
+    el.querySelectorAll("[data-view-user]").forEach(btn => btn.addEventListener("click", () => openMemberModal(btn.dataset.viewUser)));
   }
 
-  async function forceWithdrawUser(u){
-    const ok = await confirmModal(`${u.name}(${u.nickname}) 님을 강제 탈퇴시킬까요? 계정 정보가 삭제되며 되돌릴 수 없어요.`, { title: "회원 강제 탈퇴", danger: true, okText: "탈퇴시키기" });
-    if (!ok) return;
+  let memberModalUserId = null;
+
+  async function openMemberModal(id){
+    let users;
     try {
-      await apiSend("DELETE", `/api/hygo/admin/users/${u.id}`);
-      toast(`${u.name} 님을 탈퇴시켰어요.`);
+      const res = await apiSend("GET", "/api/hygo/admin/users");
+      users = res.users;
+    } catch (err) {
+      toast("회원 정보를 불러오지 못했어요.", "error");
+      return;
+    }
+    const u = users.find(x => x.id === id);
+    if (!u){ toast("회원을 찾을 수 없어요.", "error"); return; }
+
+    memberModalUserId = id;
+    document.getElementById("memberModalTitle").textContent = `${u.nickname} 님의 정보`;
+    document.getElementById("memName").value = u.name || "";
+    document.getElementById("memStudentId").value = u.studentId || "";
+    document.getElementById("memDepartment").value = u.department || "";
+    document.getElementById("memBirthdate").value = u.birthdate || "";
+    document.getElementById("memPhone").value = u.phone || "";
+    document.getElementById("memGender").value = u.gender || "";
+    const teamSel = document.getElementById("memTeam");
+    teamSel.innerHTML = `<option value="">미배정</option>` + data.teams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+    teamSel.value = u.teamId != null ? String(u.teamId) : "";
+    document.getElementById("memberModal").classList.remove("hidden");
+  }
+  function closeMemberModal(){
+    document.getElementById("memberModal").classList.add("hidden");
+    memberModalUserId = null;
+  }
+  async function saveMemberProfile(e){
+    e.preventDefault();
+    if (!memberModalUserId) return;
+    const payload = {
+      name: document.getElementById("memName").value.trim(),
+      studentId: document.getElementById("memStudentId").value.trim(),
+      department: document.getElementById("memDepartment").value.trim(),
+      birthdate: document.getElementById("memBirthdate").value,
+      phone: document.getElementById("memPhone").value.trim(),
+      gender: document.getElementById("memGender").value,
+    };
+    if (Object.values(payload).some(v => !v)){ toast("모든 항목을 입력해주세요.", "error"); return; }
+    const teamValue = document.getElementById("memTeam").value;
+    try {
+      await apiSend("PUT", `/api/hygo/admin/users/${memberModalUserId}`, payload);
+      await apiSend("POST", `/api/hygo/admin/users/${memberModalUserId}/team`, { teamId: teamValue === "" ? null : Number(teamValue) });
+      toast("회원 정보를 저장했어요.");
+      closeMemberModal();
       renderUserManageList();
     } catch (err) {
       toast(err.message, "error");
     }
   }
-
-  async function assignUserTeam(userId, teamIdValue){
+  async function withdrawMemberFromModal(){
+    if (!memberModalUserId) return;
+    const ok = await confirmModal("정말 이 회원을 강제 탈퇴시킬까요? 계정 정보가 삭제되며 되돌릴 수 없어요.", { title: "회원 강제 탈퇴", danger: true, okText: "탈퇴시키기" });
+    if (!ok) return;
     try {
-      const res = await apiSend("POST", `/api/hygo/admin/users/${userId}/team`, { teamId: teamIdValue === "" ? null : Number(teamIdValue) });
-      toast(res.user.teamId ? `${data.teams.find(t => t.id === res.user.teamId)?.name || ""}(으)로 배정했어요.` : "배정을 해제했어요.");
+      await apiSend("DELETE", `/api/hygo/admin/users/${memberModalUserId}`);
+      toast("탈퇴시켰어요.");
+      closeMemberModal();
+      renderUserManageList();
     } catch (err) {
       toast(err.message, "error");
     }
@@ -1841,19 +1903,11 @@
           <option value="일상" ${m.category === "일상" ? "selected" : ""}>일상</option>
           <option value="돌발" ${m.category === "돌발" ? "selected" : ""}>돌발</option>
         </select>
-        <input data-field="points" type="number" min="0" step="1" value="${m.points ?? ""}" placeholder="유동" ${m.category === "돌발" ? "disabled" : ""} class="w-14 shrink-0 bg-black/30 border border-white/10 rounded-lg px-1.5 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500 disabled:opacity-40">
+        <input data-field="points" type="number" min="0" step="1" value="${m.points ?? 0}" class="w-14 shrink-0 bg-black/30 border border-white/10 rounded-lg px-1.5 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
         <button data-save-mission="${m.key}" class="shrink-0 text-[11px] font-bold px-2 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/25 transition">저장</button>
         <button data-delete-mission="${m.key}" class="shrink-0 text-[11px] font-bold px-2 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">삭제</button>
       </div>`).join("");
 
-    el.querySelectorAll("[data-field='category']").forEach(sel => {
-      sel.addEventListener("change", () => {
-        const row = sel.closest("[data-mission-row]");
-        const pointsInput = row.querySelector("[data-field='points']");
-        pointsInput.disabled = sel.value === "돌발";
-        if (sel.value === "돌발") pointsInput.value = "";
-      });
-    });
     el.querySelectorAll("[data-save-mission]").forEach(btn => btn.addEventListener("click", () => saveMission(btn.dataset.saveMission)));
     el.querySelectorAll("[data-delete-mission]").forEach(btn => btn.addEventListener("click", () => deleteMission(btn.dataset.deleteMission)));
   }
@@ -2015,7 +2069,6 @@
   async function init(){
     document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
-    document.getElementById("missionSelect").addEventListener("change", toggleSurpriseField);
     document.getElementById("photoInput").addEventListener("change", handlePhotoChange);
     document.getElementById("submitForm").addEventListener("submit", handleSubmit);
     document.getElementById("registerForm").addEventListener("submit", submitRegister);
@@ -2025,6 +2078,11 @@
     document.getElementById("profileModal").addEventListener("click", e => { if (e.target.id === "profileModal") closeProfileModal(); });
     document.getElementById("profileForm").addEventListener("submit", saveProfile);
     document.getElementById("withdrawBtn").addEventListener("click", withdrawAccount);
+
+    document.getElementById("memberModalClose").addEventListener("click", closeMemberModal);
+    document.getElementById("memberModal").addEventListener("click", e => { if (e.target.id === "memberModal") closeMemberModal(); });
+    document.getElementById("memberForm").addEventListener("submit", saveMemberProfile);
+    document.getElementById("memberWithdrawBtn").addEventListener("click", withdrawMemberFromModal);
 
     document.getElementById("historyModalClose").addEventListener("click", closeHistoryModal);
     document.getElementById("historyModal").addEventListener("click", e => { if (e.target.id === "historyModal") closeHistoryModal(); });
