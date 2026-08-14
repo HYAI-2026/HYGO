@@ -494,6 +494,7 @@ function validateApplicationPayload(body) {
             }
         });
     }
+    if (!Object.keys(cleanAvailability).length) return { error: "가능한 시간을 1개 이상 선택해주세요." };
 
     return {
         value: {
@@ -940,7 +941,6 @@ function runAutoAssign() {
     const norm = s => String(s || "").trim().toLowerCase();
     const byName = new Map();
     eligible.forEach(u => {
-        if (u.nickname) byName.set(norm(u.nickname), u.id);
         if (u.name) byName.set(norm(u.name), u.id);
     });
 
@@ -955,9 +955,8 @@ function runAutoAssign() {
         const targetId = byName.get(reqName);
         if (!targetId || targetId === u.id || paired.has(targetId)) return;
         const targetApp = appByUserId.get(targetId);
-        const targetUser = eligible.find(x => x.id === targetId);
         const targetReq = norm(targetApp.teammateRequest);
-        if (targetReq === norm(u.nickname) || targetReq === norm(u.name)) {
+        if (targetReq === norm(u.name)) {
             paired.add(u.id);
             paired.add(targetId);
             units.push({ userIds: [u.id, targetId] });
@@ -1084,13 +1083,23 @@ app.post("/api/hygo/admin/test-bots", requireAdmin, (req, res) => {
         const bApp = data.applications.find(a => a.userId === bId);
         const aUser = data.users.find(u => u.id === aId);
         const bUser = data.users.find(u => u.id === bId);
-        aApp.teammateRequest = bUser.nickname;
-        bApp.teammateRequest = aUser.nickname;
+        aApp.teammateRequest = bUser.name;
+        bApp.teammateRequest = aUser.name;
     }
 
     persist();
     broadcast();
     res.json({ ok: true, created: createdNicknames.length, nicknames: createdNicknames });
+});
+
+app.delete("/api/hygo/admin/test-bots", requireAdmin, (req, res) => {
+    const botIds = new Set(data.users.filter(u => u.id.startsWith("bot_")).map(u => u.id));
+    if (!botIds.size) return res.json({ ok: true, removed: 0 });
+    data.users = data.users.filter(u => !botIds.has(u.id));
+    data.applications = data.applications.filter(a => !botIds.has(a.userId));
+    persist();
+    broadcast();
+    res.json({ ok: true, removed: botIds.size });
 });
 
 // 거절된(rejected) 인증은 점수에 영향이 없어서, 팀원이 사유를 확인한 뒤 직접 지울 수 있게
