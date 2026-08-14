@@ -440,8 +440,25 @@ app.post("/api/hygo/auth/register", requireLogin, (req, res) => {
     res.json({ ok: true, user });
 });
 
+app.delete("/api/hygo/auth/withdraw", requireLogin, (req, res) => {
+    data.users = data.users.filter(u => u.id !== req.hygoUser.id);
+    persist();
+    broadcast();
+    res.clearCookie("hygo_uid");
+    res.json({ ok: true });
+});
+
 app.get("/api/hygo/admin/users", requireAdmin, (req, res) => {
     res.json({ users: data.users });
+});
+
+app.delete("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
+    const exists = data.users.some(u => u.id === req.params.id);
+    if (!exists) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    data.users = data.users.filter(u => u.id !== req.params.id);
+    persist();
+    broadcast();
+    res.json({ ok: true });
 });
 
 app.post("/api/hygo/admin/users/:id/team", requireAdmin, (req, res) => {
