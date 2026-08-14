@@ -251,6 +251,15 @@
       </div>
 
       <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-slate-300">🧑‍🤝‍🧑 회원 관리 · 조 배정</h3>
+          <span class="text-[11px] text-slate-500"><span id="registeredUserCount">0</span>명 가입</span>
+        </div>
+        <p class="text-[11px] text-slate-500">회원가입을 완료한 사용자의 인적사항을 확인하고 조를 배정하세요.</p>
+        <div id="userManageList" class="space-y-2 max-h-[32rem] overflow-y-auto"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
         <h3 class="text-sm font-bold text-slate-300">🗓️ 하이고 일정</h3>
         <p class="text-[11px] text-slate-500">팀 캘린더 탭에 표시되는 미션 인증 기간이에요. 이 기간 안의 날짜만 캘린더에서 선택할 수 있어요.</p>
         <div class="grid grid-cols-2 gap-2.5">
@@ -341,14 +350,44 @@
   </div>
 </div>
 
-<!-- Team Select Gate (로그인 후 팀이 아직 없으면 무조건 여기부터) -->
-<div id="teamSelectModal" class="hidden fixed inset-0 z-[68] modal-backdrop flex items-center justify-center p-4">
-  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn">
+<!-- Register Gate (카카오 로그인 후 인적사항이 아직 없으면 무조건 여기부터) -->
+<div id="registerModal" class="hidden fixed inset-0 z-[68] modal-backdrop flex items-center justify-center p-4">
+  <div class="glass w-full max-w-sm rounded-2xl p-5 space-y-4 animate-popIn max-h-[90vh] overflow-y-auto">
     <div>
-      <h3 class="font-bold text-white">소속 팀을 선택해주세요</h3>
-      <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">한 번 선택하면 계정에 계속 연결돼요. 다른 팀으로 잘못 골랐다면 관리자에게 문의해주세요.</p>
+      <h3 class="font-bold text-white">회원 정보를 입력해주세요</h3>
+      <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">최초 로그인 시 한 번만 입력하면 돼요. 조 배정은 관리자가 진행해요.</p>
     </div>
-    <div id="teamSelectGrid" class="grid grid-cols-2 gap-2"></div>
+    <form id="registerForm" class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">이름</label>
+        <input id="regName" type="text" maxlength="20" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">학번</label>
+        <input id="regStudentId" type="text" maxlength="20" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">학과</label>
+        <input id="regDepartment" type="text" maxlength="30" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">생년월일</label>
+        <input id="regBirthdate" type="date" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">전화번호</label>
+        <input id="regPhone" type="tel" maxlength="20" placeholder="010-1234-5678" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">성별</label>
+        <select id="regGender" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <option value="">선택하세요</option>
+          <option value="남성">남성</option>
+          <option value="여성">여성</option>
+        </select>
+      </div>
+      <button type="submit" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">가입 완료</button>
+    </form>
   </div>
 </div>
 
@@ -652,28 +691,34 @@
       document.getElementById("userAvatar").src = currentUser.profileImage || "/icons/icon-192.png";
       document.getElementById("userNickname").textContent = currentUser.nickname;
       const team = currentUser.teamId ? data.teams.find(t => t.id === currentUser.teamId) : null;
-      document.getElementById("userTeamLabel").textContent = team ? `· ${team.name}` : "· 팀 미선택";
+      document.getElementById("userTeamLabel").textContent = team ? `· ${team.name}` :
+        (currentUser.registered ? "· 조 배정 대기중" : "· 회원가입 필요");
     }
     updateSubmitGate();
-    if (loggedIn && !currentUser.teamId) showTeamSelectGate(); else hideTeamSelectGate();
+    if (loggedIn && !currentUser.registered) showRegisterGate(); else hideRegisterGate();
   }
 
-  function showTeamSelectGate(){
-    const grid = document.getElementById("teamSelectGrid");
-    grid.innerHTML = data.teams.map(t => `
-      <button data-select-team="${t.id}" class="py-2.5 rounded-xl text-sm font-semibold bg-black/30 border border-white/10 hover:border-fuchsia-400/50 hover:bg-white/5 transition text-slate-200">${escapeHtml(t.name)}</button>
-    `).join("");
-    grid.querySelectorAll("[data-select-team]").forEach(btn => btn.addEventListener("click", () => selectMyTeam(Number(btn.dataset.selectTeam))));
-    document.getElementById("teamSelectModal").classList.remove("hidden");
+  function showRegisterGate(){
+    document.getElementById("registerModal").classList.remove("hidden");
   }
-  function hideTeamSelectGate(){
-    document.getElementById("teamSelectModal").classList.add("hidden");
+  function hideRegisterGate(){
+    document.getElementById("registerModal").classList.add("hidden");
   }
-  async function selectMyTeam(teamId){
+  async function submitRegister(e){
+    e.preventDefault();
+    const payload = {
+      name: document.getElementById("regName").value.trim(),
+      studentId: document.getElementById("regStudentId").value.trim(),
+      department: document.getElementById("regDepartment").value.trim(),
+      birthdate: document.getElementById("regBirthdate").value,
+      phone: document.getElementById("regPhone").value.trim(),
+      gender: document.getElementById("regGender").value,
+    };
+    if (Object.values(payload).some(v => !v)){ toast("모든 항목을 입력해주세요.", "error"); return; }
     try {
-      const res = await apiSend("POST", "/api/hygo/auth/team", { teamId });
+      const res = await apiSend("POST", "/api/hygo/auth/register", payload);
       currentUser = res.user;
-      toast(`${data.teams.find(t => t.id === teamId)?.name || ""} 소속으로 등록됐어요!`);
+      toast("회원가입이 완료됐어요! 관리자가 조를 배정하면 미션 인증을 시작할 수 있어요.");
       renderAuthUI();
     } catch (err) {
       toast(err.message, "error");
@@ -697,7 +742,8 @@
     document.getElementById("submitForm").classList.toggle("flex", false);
     if (loggedIn){
       const team = currentUser.teamId ? data.teams.find(t => t.id === currentUser.teamId) : null;
-      document.getElementById("submitTeamDisplay").textContent = team ? team.name : "팀을 먼저 선택해주세요";
+      document.getElementById("submitTeamDisplay").textContent = team ? team.name :
+        (currentUser.registered ? "관리자 조 배정 대기중" : "회원가입 필요");
     }
   }
 
@@ -1065,7 +1111,8 @@
   async function handleSubmit(e){
     e.preventDefault();
     if (!ensureLoggedIn()) return;
-    if (!currentUser.teamId){ toast("먼저 소속 팀을 선택해주세요.", "error"); showTeamSelectGate(); return; }
+    if (!currentUser.registered){ toast("먼저 회원가입(인적사항 입력)을 완료해주세요.", "error"); showRegisterGate(); return; }
+    if (!currentUser.teamId){ toast("아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요.", "error"); return; }
     const missionKey = document.getElementById("missionSelect").value;
     const mission = missionByKey(missionKey);
     const participants = Number(document.getElementById("participantCount").value);
@@ -1390,7 +1437,58 @@
     renderReportedComments();
     populateAdjustTeamSelect();
     renderTeamManageList();
+    renderUserManageList();
     populateCampaignInputs();
+  }
+
+  async function renderUserManageList(){
+    const el = document.getElementById("userManageList");
+    let users;
+    try {
+      const res = await apiSend("GET", "/api/hygo/admin/users");
+      users = res.users;
+    } catch (err) {
+      el.innerHTML = `<p class="text-center text-sm text-slate-500 py-8 glass rounded-2xl">회원 목록을 불러오지 못했어요.</p>`;
+      return;
+    }
+    const registered = users.filter(u => u.registered).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    document.getElementById("registeredUserCount").textContent = registered.length;
+
+    if (!registered.length){
+      el.innerHTML = `<p class="text-center text-sm text-slate-500 py-8 glass rounded-2xl">아직 회원가입을 완료한 사용자가 없어요.</p>`;
+      return;
+    }
+
+    const teamOptions = t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
+    el.innerHTML = registered.map(u => `
+      <div class="bg-black/20 rounded-lg px-3 py-2.5 border border-white/5 flex flex-col sm:flex-row sm:items-center gap-2.5">
+        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+          <img src="${u.profileImage || "/icons/icon-192.png"}" class="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-white truncate">${escapeHtml(u.name)} <span class="text-slate-500 font-normal">(${escapeHtml(u.nickname)})</span></p>
+            <p class="text-[11px] text-slate-500 truncate">${escapeHtml(u.studentId)} · ${escapeHtml(u.department)} · ${escapeHtml(u.gender)} · ${escapeHtml(u.birthdate)} · ${escapeHtml(u.phone)}</p>
+          </div>
+        </div>
+        <select data-assign-team="${u.id}" class="bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500 shrink-0">
+          <option value="">미배정</option>
+          ${data.teams.map(teamOptions).join("")}
+        </select>
+      </div>`).join("");
+
+    el.querySelectorAll("[data-assign-team]").forEach(sel => {
+      const u = registered.find(u => u.id === sel.dataset.assignTeam);
+      sel.value = u && u.teamId != null ? String(u.teamId) : "";
+      sel.addEventListener("change", () => assignUserTeam(sel.dataset.assignTeam, sel.value));
+    });
+  }
+
+  async function assignUserTeam(userId, teamIdValue){
+    try {
+      const res = await apiSend("POST", `/api/hygo/admin/users/${userId}/team`, { teamId: teamIdValue === "" ? null : Number(teamIdValue) });
+      toast(res.user.teamId ? `${data.teams.find(t => t.id === res.user.teamId)?.name || ""}(으)로 배정했어요.` : "배정을 해제했어요.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   function getReportedComments(){
@@ -1675,6 +1773,7 @@
     document.getElementById("missionSelect").addEventListener("change", toggleSurpriseField);
     document.getElementById("photoInput").addEventListener("change", handlePhotoChange);
     document.getElementById("submitForm").addEventListener("submit", handleSubmit);
+    document.getElementById("registerForm").addEventListener("submit", submitRegister);
 
     document.getElementById("historyModalClose").addEventListener("click", closeHistoryModal);
     document.getElementById("historyModal").addEventListener("click", e => { if (e.target.id === "historyModal") closeHistoryModal(); });

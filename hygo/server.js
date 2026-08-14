@@ -208,6 +208,7 @@ function normalizeCampaign(parsed) {
         parsed.campaign = { ...DEFAULT_CAMPAIGN };
     }
     if (!Array.isArray(parsed.users)) parsed.users = [];
+    parsed.users.forEach(u => { if (typeof u.registered !== "boolean") u.registered = false; });
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
@@ -288,6 +289,18 @@ function requireLogin(req, res, next) {
     next();
 }
 
+// 인적사항(이름/학번/학과/생년월일/전화번호/성별)은 관리자 전용 API로만 노출한다.
+// data 전체를 그대로 방송하는 상태 동기화(state)에는 절대 포함하면 안 된다.
+const PRIVATE_USER_FIELDS = ["name", "studentId", "department", "birthdate", "phone", "gender"];
+function sanitizeUser(u) {
+    const clean = { ...u };
+    PRIVATE_USER_FIELDS.forEach(f => delete clean[f]);
+    return clean;
+}
+function publicState() {
+    return { ...data, users: data.users.map(sanitizeUser) };
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server);
@@ -298,11 +311,11 @@ app.use(cookieParser(COOKIE_SECRET));
 
 const hygoNamespace = io.of("/hygo");
 hygoNamespace.on("connection", socket => {
-    socket.emit("state", data);
+    socket.emit("state", publicState());
 });
-const broadcast = () => hygoNamespace.emit("state", data);
+const broadcast = () => hygoNamespace.emit("state", publicState());
 
-app.get("/api/hygo/state", (req, res) => res.json(data));
+app.get("/api/hygo/state", (req, res) => res.json(publicState()));
 
 app.get("/api/hygo/photo/:id", async (req, res) => {
     try {
@@ -377,7 +390,7 @@ app.get("/api/hygo/auth/kakao/callback", async (req, res) => {
 
         let user = data.users.find(u => u.id === kakaoId);
         if (!user) {
-            user = { id: kakaoId, nickname, profileImage, teamId: null, createdAt: new Date().toISOString() };
+            user = { id: kakaoId, nickname, profileImage, teamId: null, registered: false, createdAt: new Date().toISOString() };
             data.users.push(user);
         } else {
             user.nickname = nickname;
@@ -405,19 +418,51 @@ app.get("/api/hygo/auth/me", (req, res) => {
     res.json({ user });
 });
 
-app.post("/api/hygo/auth/team", requireLogin, (req, res) => {
-    const teamId = Number((req.body || {}).teamId);
-    const team = data.teams.find(t => t.id === teamId);
-    if (!team) return res.status(400).json({ error: "올바르지 않은 팀입니다." });
-    req.hygoUser.teamId = teamId;
+const GENDER_OPTIONS = ["남성", "여성"];
+app.post("/api/hygo/auth/register", requireLogin, (req, res) => {
+    const { name, studentId, department, birthdate, phone, gender } = req.body || {};
+    const fields = { name, studentId, department, birthdate, phone, gender };
+    for (const v of Object.values(fields)) {
+        if (!v || !String(v).trim()) return res.status(400).json({ error: "모든 항목을 입력해주세요." });
+    }
+    if (!GENDER_OPTIONS.includes(gender)) return res.status(400).json({ error: "올바르지 않은 성별입니다." });
+
+    const user = req.hygoUser;
+    user.name = String(name).trim();
+    user.studentId = String(studentId).trim();
+    user.department = String(department).trim();
+    user.birthdate = String(birthdate).trim();
+    user.phone = String(phone).trim();
+    user.gender = gender;
+    user.registered = true;
     persist();
     broadcast();
-    res.json({ ok: true, user: req.hygoUser });
+    res.json({ ok: true, user });
+});
+
+app.get("/api/hygo/admin/users", requireAdmin, (req, res) => {
+    res.json({ users: data.users });
+});
+
+app.post("/api/hygo/admin/users/:id/team", requireAdmin, (req, res) => {
+    const user = data.users.find(u => u.id === req.params.id);
+    if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+    const raw = (req.body || {}).teamId;
+    const teamId = raw === null || raw === "" || raw === undefined ? null : Number(raw);
+    if (teamId !== null) {
+        const team = data.teams.find(t => t.id === teamId);
+        if (!team) return res.status(400).json({ error: "올바르지 않은 팀입니다." });
+    }
+    user.teamId = teamId;
+    persist();
+    broadcast();
+    res.json({ ok: true, user });
 });
 
 app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
     const user = req.hygoUser;
-    if (!user.teamId) return res.status(400).json({ error: "먼저 소속 팀을 선택해주세요." });
+    if (!user.registered) return res.status(400).json({ error: "먼저 회원가입(인적사항 입력)을 완료해주세요." });
+    if (!user.teamId) return res.status(400).json({ error: "아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요." });
     const { missionKey, participants, memo, photo, proposedPoints } = req.body || {};
     const mission = missionByKey(missionKey);
     const team = data.teams.find(t => t.id === user.teamId);
