@@ -127,6 +127,23 @@ const DEFAULT_MISSIONS = [
 ];
 const MISSION_CATEGORIES = ["일상", "돌발"];
 
+// ---------- 신청서(팀 배정용 설문) ----------
+const APPLICATION_DAYS = ["월", "화", "수", "목", "금"];
+const APPLICATION_SLOTS = ["08-10", "10-12", "12-14", "14-16", "16-18", "18-20", "20-22"];
+const ACTIVITY_STYLE_OPTIONS = [
+    "새로운 사람들과 금방 친해지는 편이다.",
+    "먼저 다가가지는 않지만 친해지면 활발한 편이다.",
+    "조용한 편이다.",
+];
+const TEAM_VIBE_OPTIONS = ["활동 엄청 열심히", "적당히", "부담 없이"];
+const WEEKEND_OPTIONS = ["토요일 가능", "일요일 가능", "토·일 모두 가능", "주말은 어려움"];
+const FREQUENCY_OPTIONS = ["거의 매일", "주 3~4회", "주 1~2회"];
+const DEFAULT_ACTIVITY_OPTIONS = [
+    "독도 가기", "놀이동산", "해외여행", "한강 가기", "축제 즐기기", "귀곡산장", "롤링페이퍼",
+    "펌프아케이드", "방탈출", "클레이 대결", "닌텐도 스위치 대결", "단풍 구경", "당구", "볼링",
+    "탁구", "스포츠 몬스터", "릴스 찍기", "캠핑", "쇼핑", "영화 관람",
+];
+
 const REACTION_TYPES = ["love", "funny", "fire", "annoyed", "clap"];
 const emptyReactions = () => ({ love: 0, funny: 0, fire: 0, annoyed: 0, clap: 0 });
 
@@ -200,7 +217,11 @@ function seedData() {
         t.missionsCount += 1;
     });
 
-    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [], missions: DEFAULT_MISSIONS.map(m => ({ ...m })) };
+    return {
+        teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [],
+        missions: DEFAULT_MISSIONS.map(m => ({ ...m })),
+        applications: [], activityOptions: DEFAULT_ACTIVITY_OPTIONS.slice(),
+    };
 }
 
 function normalizeCampaign(parsed) {
@@ -211,6 +232,8 @@ function normalizeCampaign(parsed) {
     parsed.users.forEach(u => { if (typeof u.registered !== "boolean") u.registered = false; });
     if (!Array.isArray(parsed.missions) || !parsed.missions.length) parsed.missions = DEFAULT_MISSIONS.map(m => ({ ...m }));
     parsed.missions.forEach(m => { if (m.points == null) m.points = 0; });
+    if (!Array.isArray(parsed.applications)) parsed.applications = [];
+    if (!Array.isArray(parsed.activityOptions) || !parsed.activityOptions.length) parsed.activityOptions = DEFAULT_ACTIVITY_OPTIONS.slice();
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
@@ -301,8 +324,11 @@ function sanitizeUser(u) {
     PRIVATE_USER_FIELDS.forEach(f => delete clean[f]);
     return clean;
 }
+// 신청서(data.applications)는 팀 배정 신청 내용(같이 팀 되고 싶은 사람, 기타 의견 등)을
+// 담고 있어 민감할 수 있으므로 전체 방송(state)에서는 빼고 관리자 전용 API로만 노출한다.
 function publicState() {
-    return { ...data, users: data.users.map(sanitizeUser) };
+    const { applications, ...rest } = data;
+    return { ...rest, users: data.users.map(sanitizeUser) };
 }
 
 const app = express();
@@ -444,6 +470,68 @@ app.post("/api/hygo/auth/register", requireLogin, (req, res) => {
     res.json({ ok: true, user });
 });
 
+function validateApplicationPayload(body) {
+    const { activityStyle, teamVibe, availability, weekendAvailability, frequency, activities, teammateRequest, comment } = body || {};
+
+    if (!ACTIVITY_STYLE_OPTIONS.includes(activityStyle)) return { error: "활동 스타일을 선택해주세요." };
+    if (!TEAM_VIBE_OPTIONS.includes(teamVibe)) return { error: "원하는 팀 분위기를 선택해주세요." };
+    if (!WEEKEND_OPTIONS.includes(weekendAvailability)) return { error: "주말 가능 여부를 선택해주세요." };
+
+    const freq = String(frequency || "").trim();
+    if (!freq || freq.length > 60) return { error: "활동 빈도를 선택하거나 입력해주세요." };
+
+    if (!Array.isArray(activities) || !activities.length) return { error: "선호 활동을 1개 이상 선택해주세요." };
+    const cleanActivities = activities.map(a => String(a || "").trim()).filter(Boolean).slice(0, 30);
+    if (!cleanActivities.length) return { error: "선호 활동을 1개 이상 선택해주세요." };
+
+    const cleanAvailability = {};
+    if (availability && typeof availability === "object") {
+        APPLICATION_DAYS.forEach(day => {
+            const slots = availability[day];
+            if (Array.isArray(slots)) {
+                const clean = slots.filter(s => APPLICATION_SLOTS.includes(s));
+                if (clean.length) cleanAvailability[day] = clean;
+            }
+        });
+    }
+
+    return {
+        value: {
+            activityStyle, teamVibe,
+            availability: cleanAvailability,
+            weekendAvailability,
+            frequency: freq,
+            activities: cleanActivities,
+            teammateRequest: String(teammateRequest || "").trim().slice(0, 30),
+            comment: String(comment || "").trim().slice(0, 500),
+        },
+    };
+}
+
+app.post("/api/hygo/applications", requireLogin, (req, res) => {
+    const user = req.hygoUser;
+    if (!user.registered) return res.status(400).json({ error: "먼저 회원가입(인적사항 입력)을 완료해주세요." });
+    const result = validateApplicationPayload(req.body);
+    if (result.error) return res.status(400).json({ error: result.error });
+
+    let application = data.applications.find(a => a.userId === user.id);
+    if (application) {
+        Object.assign(application, result.value);
+        application.updatedAt = new Date().toISOString();
+    } else {
+        application = { id: uid(), userId: user.id, ...result.value, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        data.applications.push(application);
+    }
+    persist();
+    broadcast();
+    res.json({ ok: true, application });
+});
+
+app.get("/api/hygo/applications/me", requireLogin, (req, res) => {
+    const application = data.applications.find(a => a.userId === req.hygoUser.id);
+    res.json({ application: application || null });
+});
+
 app.delete("/api/hygo/auth/withdraw", requireLogin, (req, res) => {
     data.users = data.users.filter(u => u.id !== req.hygoUser.id);
     persist();
@@ -454,6 +542,10 @@ app.delete("/api/hygo/auth/withdraw", requireLogin, (req, res) => {
 
 app.get("/api/hygo/admin/users", requireAdmin, (req, res) => {
     res.json({ users: data.users });
+});
+
+app.get("/api/hygo/admin/applications", requireAdmin, (req, res) => {
+    res.json({ applications: data.applications });
 });
 
 app.put("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
@@ -768,6 +860,237 @@ app.delete("/api/hygo/admin/missions/:key", requireAdmin, (req, res) => {
     persist();
     broadcast();
     res.json({ ok: true });
+});
+
+app.post("/api/hygo/admin/activity-options", requireAdmin, (req, res) => {
+    const name = String((req.body || {}).name || "").trim();
+    if (!name) return res.status(400).json({ error: "활동 이름을 입력해주세요." });
+    if (data.activityOptions.includes(name)) return res.status(400).json({ error: "이미 존재하는 활동입니다." });
+    data.activityOptions.push(name);
+    persist();
+    broadcast();
+    res.json({ ok: true, activityOptions: data.activityOptions });
+});
+
+app.put("/api/hygo/admin/activity-options/:name", requireAdmin, (req, res) => {
+    const oldName = req.params.name;
+    const idx = data.activityOptions.indexOf(oldName);
+    if (idx === -1) return res.status(404).json({ error: "활동을 찾을 수 없습니다." });
+    const newName = String((req.body || {}).name || "").trim();
+    if (!newName) return res.status(400).json({ error: "활동 이름을 입력해주세요." });
+    if (newName !== oldName && data.activityOptions.includes(newName)) return res.status(400).json({ error: "이미 존재하는 활동입니다." });
+    data.activityOptions[idx] = newName;
+    data.applications.forEach(a => {
+        a.activities = a.activities.map(act => act === oldName ? newName : act);
+    });
+    persist();
+    broadcast();
+    res.json({ ok: true, activityOptions: data.activityOptions });
+});
+
+app.delete("/api/hygo/admin/activity-options/:name", requireAdmin, (req, res) => {
+    const name = req.params.name;
+    if (!data.activityOptions.includes(name)) return res.status(404).json({ error: "활동을 찾을 수 없습니다." });
+    if (data.activityOptions.length <= 1) return res.status(400).json({ error: "최소 1개의 활동은 있어야 해요." });
+    data.activityOptions = data.activityOptions.filter(a => a !== name);
+    persist();
+    broadcast();
+    res.json({ ok: true, activityOptions: data.activityOptions });
+});
+
+// ---------- AI 자동배정 ----------
+// 규칙 기반 그리디 클러스터링. 우선순위: 0) 서로가 서로를 지목한 짝, 1) 가능 시간 겹침,
+// 2) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임), 그 외 주말 가능 여부·활동 빈도는
+// 같은 사람끼리, 활동 스타일은 팀 안에서 고르게 섞이도록 보너스/페널티를 준다.
+const TEAM_VIBE_EXTREMES = ["활동 엄청 열심히", "부담 없이"];
+const FREQUENCY_ORDER = { "거의 매일": 3, "주 3~4회": 2, "주 1~2회": 1 };
+
+function availabilityOverlap(a, b) {
+    const days = new Set([...Object.keys(a.availability || {}), ...Object.keys(b.availability || {})]);
+    let inter = 0, union = 0;
+    days.forEach(day => {
+        const setA = new Set((a.availability || {})[day] || []);
+        const setB = new Set((b.availability || {})[day] || []);
+        const all = new Set([...setA, ...setB]);
+        all.forEach(slot => {
+            union++;
+            if (setA.has(slot) && setB.has(slot)) inter++;
+        });
+    });
+    return union ? inter / union : 0;
+}
+
+function vibeCompatibility(a, b) {
+    if (a.teamVibe === b.teamVibe) return 1;
+    if (TEAM_VIBE_EXTREMES.includes(a.teamVibe) && TEAM_VIBE_EXTREMES.includes(b.teamVibe)) return -3;
+    return 0;
+}
+
+function frequencyCloseness(a, b) {
+    const sa = FREQUENCY_ORDER[a.frequency] ?? 1.5;
+    const sb = FREQUENCY_ORDER[b.frequency] ?? 1.5;
+    return 1 - Math.min(1, Math.abs(sa - sb) / 2);
+}
+
+function runAutoAssign() {
+    const appByUserId = new Map(data.applications.map(a => [a.userId, a]));
+    const eligible = data.users.filter(u => u.registered && u.teamId == null && appByUserId.has(u.id));
+    if (!eligible.length) return { assignedCount: 0, teamSizes: {} };
+
+    const norm = s => String(s || "").trim().toLowerCase();
+    const byName = new Map();
+    eligible.forEach(u => {
+        if (u.nickname) byName.set(norm(u.nickname), u.id);
+        if (u.name) byName.set(norm(u.name), u.id);
+    });
+
+    // 0순위: 서로가 서로를 지목한 경우만 짝으로 묶는다 (한 명당 지목은 1명뿐이라 사이클은 생기지 않는다).
+    const paired = new Set();
+    const units = [];
+    eligible.forEach(u => {
+        if (paired.has(u.id)) return;
+        const app = appByUserId.get(u.id);
+        const reqName = norm(app.teammateRequest);
+        if (!reqName) return;
+        const targetId = byName.get(reqName);
+        if (!targetId || targetId === u.id || paired.has(targetId)) return;
+        const targetApp = appByUserId.get(targetId);
+        const targetUser = eligible.find(x => x.id === targetId);
+        const targetReq = norm(targetApp.teammateRequest);
+        if (targetReq === norm(u.nickname) || targetReq === norm(u.name)) {
+            paired.add(u.id);
+            paired.add(targetId);
+            units.push({ userIds: [u.id, targetId] });
+        }
+    });
+    eligible.forEach(u => { if (!paired.has(u.id)) units.push({ userIds: [u.id] }); });
+    units.sort((a, b) => b.userIds.length - a.userIds.length);
+
+    const teams = data.teams;
+    const currentCount = new Map(teams.map(t => [t.id, data.users.filter(u => u.teamId === t.id).length]));
+    const totalAfter = teams.reduce((sum, t) => sum + currentCount.get(t.id), 0) + eligible.length;
+    const base = Math.floor(totalAfter / teams.length);
+    const remainder = totalAfter % teams.length;
+    const sortedByCount = [...teams].sort((a, b) => currentCount.get(a.id) - currentCount.get(b.id));
+    const targetSize = new Map(teams.map(t => [t.id, base]));
+    for (let i = 0; i < remainder; i++) targetSize.set(sortedByCount[i].id, targetSize.get(sortedByCount[i].id) + 1);
+
+    const teamMembers = new Map(teams.map(t => [
+        t.id, data.users.filter(u => u.teamId === t.id).map(u => appByUserId.get(u.id)).filter(Boolean),
+    ]));
+    const teamCount = new Map(teams.map(t => [t.id, currentCount.get(t.id)]));
+
+    function scoreUnitForTeam(unitApps, teamId) {
+        const members = teamMembers.get(teamId);
+        const size = teamCount.get(teamId);
+        const target = targetSize.get(teamId);
+        let score = 0;
+        if (size + unitApps.length > target) score -= 50 * (size + unitApps.length - target);
+        if (!members.length) return score;
+
+        unitApps.forEach(app => {
+            let avail = 0, vibe = 0, weekend = 0, freq = 0, sameStyle = 0;
+            members.forEach(m => {
+                avail += availabilityOverlap(app, m);
+                vibe += vibeCompatibility(app, m);
+                weekend += app.weekendAvailability === m.weekendAvailability ? 1 : 0;
+                freq += frequencyCloseness(app, m);
+                sameStyle += app.activityStyle === m.activityStyle ? 1 : 0;
+            });
+            const n = members.length;
+            score += 30 * (avail / n);
+            score += 15 * (vibe / n);
+            score += 10 * (weekend / n);
+            score += 8 * (freq / n);
+            score += 5 * (1 - sameStyle / n);
+        });
+        return score;
+    }
+
+    units.forEach(unit => {
+        const unitApps = unit.userIds.map(id => appByUserId.get(id));
+        let best = teams[0], bestScore = -Infinity;
+        teams.forEach(t => {
+            const s = scoreUnitForTeam(unitApps, t.id);
+            if (s > bestScore) { bestScore = s; best = t; }
+        });
+        unit.userIds.forEach(id => {
+            data.users.find(u => u.id === id).teamId = best.id;
+        });
+        teamMembers.get(best.id).push(...unitApps);
+        teamCount.set(best.id, teamCount.get(best.id) + unit.userIds.length);
+    });
+
+    return {
+        assignedCount: eligible.length,
+        teamSizes: Object.fromEntries(teams.map(t => [t.name, teamCount.get(t.id)])),
+    };
+}
+
+app.post("/api/hygo/admin/auto-assign", requireAdmin, (req, res) => {
+    if (data.teams.length < 1) return res.status(400).json({ error: "팀이 없습니다. 먼저 팀을 만들어주세요." });
+    const result = runAutoAssign();
+    if (result.assignedCount > 0) {
+        persist();
+        broadcast();
+    }
+    res.json({ ok: true, ...result });
+});
+
+app.post("/api/hygo/admin/test-bots", requireAdmin, (req, res) => {
+    const count = Math.min(Math.max(Number((req.body || {}).count) || 12, 1), 60);
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const createdNicknames = [];
+    const createdIds = [];
+
+    for (let i = 0; i < count; i++) {
+        const id = "bot_" + uid();
+        const nickname = `테스트봇${Math.floor(1000 + Math.random() * 9000)}`;
+        data.users.push({
+            id, nickname, profileImage: "", teamId: null, registered: true, createdAt: new Date().toISOString(),
+            name: `테스트회원${i + 1}`, studentId: `test${1000 + i}`, department: "테스트학과",
+            birthdate: "2002-01-01", phone: "010-0000-0000", gender: pick(GENDER_OPTIONS),
+        });
+
+        const availability = {};
+        APPLICATION_DAYS.forEach(day => {
+            if (Math.random() < 0.7) {
+                const slots = APPLICATION_SLOTS.filter(() => Math.random() < 0.35);
+                if (slots.length) availability[day] = slots;
+            }
+        });
+        const activities = data.activityOptions.filter(() => Math.random() < 0.25);
+
+        data.applications.push({
+            id: uid(), userId: id,
+            activityStyle: pick(ACTIVITY_STYLE_OPTIONS),
+            teamVibe: pick(TEAM_VIBE_OPTIONS),
+            availability,
+            weekendAvailability: pick(WEEKEND_OPTIONS),
+            frequency: pick(FREQUENCY_OPTIONS),
+            activities: activities.length ? activities : [pick(data.activityOptions)],
+            teammateRequest: "",
+            comment: "",
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        });
+        createdNicknames.push(nickname);
+        createdIds.push(id);
+    }
+
+    // 테스트용으로 짝 지목(0순위) 로직도 검증할 수 있도록, 봇 중 한 쌍은 서로를 지목하게 만든다.
+    if (createdIds.length >= 2) {
+        const [aId, bId] = createdIds;
+        const aApp = data.applications.find(a => a.userId === aId);
+        const bApp = data.applications.find(a => a.userId === bId);
+        const aUser = data.users.find(u => u.id === aId);
+        const bUser = data.users.find(u => u.id === bId);
+        aApp.teammateRequest = bUser.nickname;
+        bApp.teammateRequest = aUser.nickname;
+    }
+
+    persist();
+    broadcast();
+    res.json({ ok: true, created: createdNicknames.length, nicknames: createdNicknames });
 });
 
 // 거절된(rejected) 인증은 점수에 영향이 없어서, 팀원이 사유를 확인한 뒤 직접 지울 수 있게
