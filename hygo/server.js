@@ -116,7 +116,7 @@ function notifyWebhook(message) {
     }).catch(err => console.warn("[hygo] webhook notify failed:", err.message));
 }
 
-const MISSIONS = [
+const DEFAULT_MISSIONS = [
     { key: "drink", category: "일상", emoji: "🍺", label: "술 마시기", points: 10 },
     { key: "meal", category: "일상", emoji: "🍚", label: "밥 먹기", points: 5 },
     { key: "cafe", category: "일상", emoji: "☕", label: "카페 가기", points: 5 },
@@ -125,7 +125,7 @@ const MISSIONS = [
     { key: "photo", category: "일상", emoji: "📸", label: "인증샷 찍기", points: 3 },
     { key: "surprise", category: "돌발", emoji: "🎯", label: "주차별 돌발 미션", points: null },
 ];
-const missionByKey = key => MISSIONS.find(m => m.key === key);
+const MISSION_CATEGORIES = ["일상", "돌발"];
 
 const REACTION_TYPES = ["love", "funny", "fire", "annoyed", "clap"];
 const emptyReactions = () => ({ love: 0, funny: 0, fire: 0, annoyed: 0, clap: 0 });
@@ -156,7 +156,7 @@ function seedData() {
 
     const submissions = [];
     function addApproved(teamId, missionKey, participants, memo, daysBack, awarded) {
-        const m = missionByKey(missionKey);
+        const m = DEFAULT_MISSIONS.find(x => x.key === missionKey);
         const createdAt = daysAgo(daysBack);
         submissions.push({
             id: uid(), teamId, missionKey, category: m.category, label: m.label, emoji: m.emoji,
@@ -200,7 +200,7 @@ function seedData() {
         t.missionsCount += 1;
     });
 
-    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [] };
+    return { teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [], missions: DEFAULT_MISSIONS.map(m => ({ ...m })) };
 }
 
 function normalizeCampaign(parsed) {
@@ -209,6 +209,7 @@ function normalizeCampaign(parsed) {
     }
     if (!Array.isArray(parsed.users)) parsed.users = [];
     parsed.users.forEach(u => { if (typeof u.registered !== "boolean") u.registered = false; });
+    if (!Array.isArray(parsed.missions) || !parsed.missions.length) parsed.missions = DEFAULT_MISSIONS.map(m => ({ ...m }));
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
@@ -252,6 +253,8 @@ async function loadData() {
 }
 
 let data;
+const missionByKey = key => data.missions.find(m => m.key === key);
+
 let writeChain = Promise.resolve();
 function persist() {
     writeChain = writeChain.then(async () => {
@@ -700,6 +703,60 @@ app.delete("/api/hygo/teams/:id", requireAdmin, async (req, res) => {
     for (const sub of removedSubmissions) {
         if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
     }
+});
+
+app.post("/api/hygo/admin/missions", requireAdmin, (req, res) => {
+    const { key, category, label, emoji, points } = req.body || {};
+    const cleanKey = String(key || "").trim();
+    if (!cleanKey) return res.status(400).json({ error: "미션 키를 입력해주세요." });
+    if (data.missions.some(m => m.key === cleanKey)) return res.status(400).json({ error: "이미 존재하는 미션 키입니다." });
+    if (!MISSION_CATEGORIES.includes(category)) return res.status(400).json({ error: "올바르지 않은 카테고리입니다." });
+    if (!String(label || "").trim()) return res.status(400).json({ error: "미션 이름을 입력해주세요." });
+
+    const mission = {
+        key: cleanKey, category, label: String(label).trim(), emoji: String(emoji || "🎯").trim(),
+        points: category === "돌발" ? null : (Number(points) || 0),
+    };
+    data.missions.push(mission);
+    persist();
+    broadcast();
+    res.json({ ok: true, mission });
+});
+
+app.put("/api/hygo/admin/missions/:key", requireAdmin, (req, res) => {
+    const mission = data.missions.find(m => m.key === req.params.key);
+    if (!mission) return res.status(404).json({ error: "미션을 찾을 수 없습니다." });
+    const { category, label, emoji, points } = req.body || {};
+
+    if (category !== undefined) {
+        if (!MISSION_CATEGORIES.includes(category)) return res.status(400).json({ error: "올바르지 않은 카테고리입니다." });
+        mission.category = category;
+    }
+    if (label !== undefined) {
+        if (!String(label).trim()) return res.status(400).json({ error: "미션 이름을 입력해주세요." });
+        mission.label = String(label).trim();
+    }
+    if (emoji !== undefined && String(emoji).trim()) mission.emoji = String(emoji).trim();
+    if (mission.category === "돌발") {
+        mission.points = null;
+    } else if (points !== undefined) {
+        mission.points = Number(points) || 0;
+    }
+
+    persist();
+    broadcast();
+    res.json({ ok: true, mission });
+});
+
+app.delete("/api/hygo/admin/missions/:key", requireAdmin, (req, res) => {
+    if (!data.missions.some(m => m.key === req.params.key)) return res.status(404).json({ error: "미션을 찾을 수 없습니다." });
+    if (data.missions.length <= 1) return res.status(400).json({ error: "최소 1개의 미션은 있어야 해요." });
+    const hasPending = data.submissions.some(s => s.status === "pending" && s.missionKey === req.params.key);
+    if (hasPending) return res.status(400).json({ error: "대기 중인 인증이 있는 미션은 삭제할 수 없어요. 먼저 승인/거절해주세요." });
+    data.missions = data.missions.filter(m => m.key !== req.params.key);
+    persist();
+    broadcast();
+    res.json({ ok: true });
 });
 
 // 거절된(rejected) 인증은 점수에 영향이 없어서, 팀원이 사유를 확인한 뒤 직접 지울 수 있게

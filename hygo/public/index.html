@@ -201,7 +201,14 @@
 
   <!-- ================= FEED ================= -->
   <section id="tab-feed" class="hidden space-y-3 animate-fadeIn">
-    <h2 class="text-lg font-bold text-white">📢 최신 인증 피드</h2>
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <h2 class="text-lg font-bold text-white">📢 인증 피드</h2>
+      <select id="feedSortSelect" class="bg-black/30 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+        <option value="latest">최신순</option>
+        <option value="popular">인기순</option>
+        <option value="oldest">오래된순</option>
+      </select>
+    </div>
     <div id="feedList" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
   </section>
 
@@ -252,6 +259,27 @@
           <button id="addTeamBtn" class="px-4 py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition whitespace-nowrap">+ 팀 추가</button>
         </div>
         <div id="teamManageList" class="space-y-1.5 max-h-56 overflow-y-auto"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-slate-300">🎯 미션 유형 관리</h3>
+          <span class="text-[11px] text-slate-500">현재 <span id="missionCount">0</span>개</span>
+        </div>
+        <div id="missionManageList" class="space-y-1.5 max-h-72 overflow-y-auto"></div>
+        <div class="border-t border-white/10 pt-3 space-y-2">
+          <p class="text-[11px] text-slate-500">새 미션 추가</p>
+          <div class="grid grid-cols-[4.5rem_1fr] gap-2">
+            <input id="newMissionEmoji" type="text" maxlength="4" placeholder="🎯" class="min-w-0 bg-black/30 border border-white/10 rounded-xl px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+            <select id="newMissionCategory" class="min-w-0 bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+              <option value="일상">일상 미션</option>
+              <option value="돌발">돌발 미션</option>
+            </select>
+          </div>
+          <input id="newMissionLabel" type="text" maxlength="20" placeholder="미션 이름 (예: 보드게임 하기)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <input id="newMissionPoints" type="number" min="0" step="1" placeholder="배점 (돌발 미션은 참가자가 직접 입력하므로 비워두세요)" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <button id="addMissionBtn" class="w-full py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition">+ 미션 추가</button>
+        </div>
       </div>
 
       <div class="glass rounded-2xl p-4 sm:p-5 space-y-3">
@@ -609,16 +637,7 @@
 (function(){
   "use strict";
 
-  const MISSIONS = [
-    { key: "drink",    category: "일상", emoji: "🍺", label: "술 마시기",       points: 10 },
-    { key: "meal",     category: "일상", emoji: "🍚", label: "밥 먹기",         points: 5 },
-    { key: "cafe",     category: "일상", emoji: "☕", label: "카페 가기",       points: 5 },
-    { key: "karaoke",  category: "일상", emoji: "🎤", label: "노래방 가기",     points: 5 },
-    { key: "study",    category: "일상", emoji: "📚", label: "공부/코딩하기",   points: 5 },
-    { key: "photo",    category: "일상", emoji: "📸", label: "인증샷 찍기",     points: 3 },
-    { key: "surprise", category: "돌발", emoji: "🎯", label: "주차별 돌발 미션", points: null },
-  ];
-  const missionByKey = k => MISSIONS.find(m => m.key === k);
+  const missionByKey = k => (data.missions || []).find(m => m.key === k);
 
   const REACTIONS = [
     { key: "love",    emoji: "❤️", label: "좋아요" },
@@ -915,6 +934,7 @@
   function renderAll(){
     renderLeaderboard();
     updateSubmitGate();
+    populateMissionSelect();
     renderFeed();
     if (reactionPickerSubId) renderReactionPickerContent();
     if (isAdmin) {
@@ -1154,12 +1174,14 @@
   // ---------- submit form ----------
   function populateMissionSelect(){
     const sel = document.getElementById("missionSelect");
+    const prevValue = sel.value;
     const groups = { "일상": [], "돌발": [] };
-    MISSIONS.forEach(m => groups[m.category].push(m));
+    (data.missions || []).forEach(m => groups[m.category].push(m));
     sel.innerHTML = Object.entries(groups).map(([cat, list]) => `
       <optgroup label="${cat === "일상" ? "🌤️ 일상 미션" : "🎯 돌발 미션"}">
         ${list.map(m => `<option value="${m.key}">${m.emoji} ${m.label}${m.points ? ` (${m.points}점)` : " (배점 유동)"}</option>`).join("")}
       </optgroup>`).join("");
+    if ((data.missions || []).some(m => m.key === prevValue)) sel.value = prevValue;
     toggleSurpriseField();
   }
   function toggleSurpriseField(){
@@ -1451,11 +1473,22 @@
     }
   }
 
+  let feedSort = "latest";
+  const totalReactions = s => Object.values(s.reactions || {}).reduce((sum, n) => sum + n, 0);
+
   function renderFeed(){
     const el = document.getElementById("feedList");
     const approved = data.submissions
       .filter(s => s.status === "approved")
-      .sort((a, b) => new Date(b.approvedAt || b.createdAt) - new Date(a.approvedAt || a.createdAt));
+      .sort((a, b) => {
+        if (feedSort === "popular") {
+          const diff = totalReactions(b) - totalReactions(a);
+          if (diff !== 0) return diff;
+          return new Date(b.approvedAt || b.createdAt) - new Date(a.approvedAt || a.createdAt);
+        }
+        if (feedSort === "oldest") return new Date(a.approvedAt || a.createdAt) - new Date(b.approvedAt || b.createdAt);
+        return new Date(b.approvedAt || b.createdAt) - new Date(a.approvedAt || a.createdAt);
+      });
 
     if (!approved.length){
       el.innerHTML = `<p class="col-span-full text-center text-sm text-slate-500 py-10">아직 승인된 인증이 없어요.</p>`;
@@ -1548,6 +1581,7 @@
     renderReportedComments();
     populateAdjustTeamSelect();
     renderTeamManageList();
+    renderMissionManageList();
     renderUserManageList();
     populateCampaignInputs();
   }
@@ -1795,6 +1829,87 @@
     }
   }
 
+  function renderMissionManageList(){
+    const missions = data.missions || [];
+    document.getElementById("missionCount").textContent = missions.length;
+    const el = document.getElementById("missionManageList");
+    el.innerHTML = missions.map(m => `
+      <div class="flex items-center gap-1.5 bg-black/20 rounded-lg px-2 py-2 border border-white/5" data-mission-row="${m.key}">
+        <input data-field="emoji" value="${escapeHtml(m.emoji)}" maxlength="4" class="w-10 shrink-0 bg-black/30 border border-white/10 rounded-lg px-1.5 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+        <input data-field="label" value="${escapeHtml(m.label)}" maxlength="20" class="flex-1 min-w-0 bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+        <select data-field="category" class="shrink-0 bg-black/30 border border-white/10 rounded-lg px-1.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+          <option value="일상" ${m.category === "일상" ? "selected" : ""}>일상</option>
+          <option value="돌발" ${m.category === "돌발" ? "selected" : ""}>돌발</option>
+        </select>
+        <input data-field="points" type="number" min="0" step="1" value="${m.points ?? ""}" placeholder="유동" ${m.category === "돌발" ? "disabled" : ""} class="w-14 shrink-0 bg-black/30 border border-white/10 rounded-lg px-1.5 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-fuchsia-500 disabled:opacity-40">
+        <button data-save-mission="${m.key}" class="shrink-0 text-[11px] font-bold px-2 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/25 transition">저장</button>
+        <button data-delete-mission="${m.key}" class="shrink-0 text-[11px] font-bold px-2 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">삭제</button>
+      </div>`).join("");
+
+    el.querySelectorAll("[data-field='category']").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const row = sel.closest("[data-mission-row]");
+        const pointsInput = row.querySelector("[data-field='points']");
+        pointsInput.disabled = sel.value === "돌발";
+        if (sel.value === "돌발") pointsInput.value = "";
+      });
+    });
+    el.querySelectorAll("[data-save-mission]").forEach(btn => btn.addEventListener("click", () => saveMission(btn.dataset.saveMission)));
+    el.querySelectorAll("[data-delete-mission]").forEach(btn => btn.addEventListener("click", () => deleteMission(btn.dataset.deleteMission)));
+  }
+
+  async function saveMission(key){
+    const row = document.querySelector(`[data-mission-row="${key}"]`);
+    const emoji = row.querySelector("[data-field='emoji']").value.trim();
+    const label = row.querySelector("[data-field='label']").value.trim();
+    const category = row.querySelector("[data-field='category']").value;
+    const pointsRaw = row.querySelector("[data-field='points']").value;
+    if (!label){ toast("미션 이름을 입력해주세요.", "error"); return; }
+    try {
+      await apiSend("PUT", `/api/hygo/admin/missions/${encodeURIComponent(key)}`, {
+        emoji, label, category, points: pointsRaw === "" ? 0 : Number(pointsRaw),
+      });
+      toast(`"${label}" 미션을 수정했어요.`);
+      renderMissionManageList();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function deleteMission(key){
+    const m = (data.missions || []).find(m => m.key === key);
+    const ok = await confirmModal(`"${m ? m.label : key}" 미션을 삭제할까요? 되돌릴 수 없어요.`, { title: "미션 삭제", danger: true, okText: "삭제" });
+    if (!ok) return;
+    try {
+      await apiSend("DELETE", `/api/hygo/admin/missions/${encodeURIComponent(key)}`);
+      toast("미션을 삭제했어요.");
+      renderMissionManageList();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function addMission(){
+    const emoji = document.getElementById("newMissionEmoji").value.trim() || "🎯";
+    const category = document.getElementById("newMissionCategory").value;
+    const label = document.getElementById("newMissionLabel").value.trim();
+    const pointsRaw = document.getElementById("newMissionPoints").value;
+    if (!label){ toast("미션 이름을 입력해주세요.", "error"); return; }
+    const key = "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      await apiSend("POST", "/api/hygo/admin/missions", {
+        key, emoji, category, label, points: pointsRaw === "" ? 0 : Number(pointsRaw),
+      });
+      toast(`"${label}" 미션을 추가했어요.`);
+      document.getElementById("newMissionEmoji").value = "";
+      document.getElementById("newMissionLabel").value = "";
+      document.getElementById("newMissionPoints").value = "";
+      renderMissionManageList();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
   async function resetToZero(){
     const ok = await confirmModal("정말 모든 팀을 0점으로 초기화할까요? 모든 인증 내역과 수동 조정 기록이 삭제돼요. 팀 목록과 하이고 일정은 그대로 유지됩니다. 되돌릴 수 없어요.", { title: "전체 0점 초기화", danger: true, okText: "0점으로 초기화" });
     if (!ok) return;
@@ -1930,6 +2045,8 @@
     document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
     document.getElementById("adjustApplyBtn").addEventListener("click", applyManualAdjustment);
     document.getElementById("addTeamBtn").addEventListener("click", addTeam);
+    document.getElementById("addMissionBtn").addEventListener("click", addMission);
+    document.getElementById("feedSortSelect").addEventListener("change", e => { feedSort = e.target.value; renderFeed(); });
     document.getElementById("campaignApplyBtn").addEventListener("click", applyCampaign);
     document.getElementById("backupDownloadBtn").addEventListener("click", downloadBackup);
     document.getElementById("backupRestoreInput").addEventListener("change", handleBackupRestore);
