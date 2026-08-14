@@ -366,7 +366,7 @@
           <h3 class="text-sm font-bold text-slate-300">🤖 AI 자동배정</h3>
           <span class="text-[11px] text-slate-500"><span id="pendingApplicantCount">0</span>명 대기중</span>
         </div>
-        <p class="text-[11px] text-slate-500">신청서를 제출했지만 아직 조 배정이 안 된 사람들을 알고리즘으로 한 번에 배정해요. (같이 팀 되고 싶은 사람 → 가능 시간 → 팀 분위기 순 우선)</p>
+        <p class="text-[11px] text-slate-500">신청서를 제출했지만 아직 조 배정이 안 된 사람들을 알고리즘으로 한 번에 배정해요. (같이 팀 되고 싶은 사람 → 가능 시간 → 성별(반반) → 팀 분위기 → 나이 → 학번 순 우선)</p>
         <button id="autoAssignBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">🤖 자동배정 실행</button>
         <div class="border-t border-white/10 pt-3 space-y-2">
           <p class="text-[11px] text-slate-500">테스트용 신청자 생성 (알고리즘 동작 확인용)</p>
@@ -962,7 +962,7 @@
       currentUser = res.user;
       toast("회원가입이 완료됐어요!");
       renderAuthUI();
-      const goApply = await confirmModal("신청페이지로 넘어가시겠습니까? 신청서를 작성하면 관리자가 조를 배정할 때 참고해요.", { title: "신청서 작성", okText: "신청서 작성하기" });
+      const goApply = await confirmModal("신청페이지로 넘어가시겠습니까? 회원가입만으로 신청이 완료되지 않습니다. 회원가입 후 반드시 신청서를 작성해 주세요.", { title: "신청서 작성", okText: "신청서 작성하기" });
       if (goApply) switchTab("application");
     } catch (err) {
       toast(err.message, "error");
@@ -978,7 +978,7 @@
         <span>${escapeHtml(opt)}</span>
       </label>`).join("");
   }
-  function renderRadioGroupWithOther(containerId, name, options, otherInputId){
+  function renderRadioGroupWithOther(containerId, name, options){
     const el = document.getElementById(containerId);
     const items = [...options, "기타"];
     el.innerHTML = items.map(opt => `
@@ -986,9 +986,6 @@
         <input type="radio" name="${name}" value="${escapeHtml(opt)}" class="mt-0.5 shrink-0">
         <span>${escapeHtml(opt)}</span>
       </label>`).join("");
-    el.addEventListener("change", () => {
-      document.getElementById(otherInputId).classList.toggle("hidden", getRadioValue(name) !== "기타");
-    });
   }
   function getRadioValue(name){
     const checked = document.querySelector(`input[name="${name}"]:checked`);
@@ -1040,7 +1037,7 @@
     renderRadioGroup("appActivityStyleOptions", "activityStyle", ACTIVITY_STYLE_OPTIONS);
     renderRadioGroup("appTeamVibeOptions", "teamVibe", TEAM_VIBE_OPTIONS);
     renderRadioGroup("appWeekendOptions", "weekendAvailability", WEEKEND_OPTIONS);
-    renderRadioGroupWithOther("appFrequencyOptions", "frequency", FREQUENCY_OPTIONS, "appFrequencyOther");
+    renderRadioGroupWithOther("appFrequencyOptions", "frequency", FREQUENCY_OPTIONS);
     renderAvailabilityTable();
     renderActivityOptions();
     document.getElementById("appFrequencyOther").classList.add("hidden");
@@ -2583,6 +2580,9 @@
     document.getElementById("editApplicationBtn").addEventListener("click", editApplication);
     document.getElementById("appActivityOtherCheck").addEventListener("change", e => {
       document.getElementById("appActivityOtherText").classList.toggle("hidden", !e.target.checked);
+    });
+    document.getElementById("appFrequencyOptions").addEventListener("change", () => {
+      document.getElementById("appFrequencyOther").classList.toggle("hidden", getRadioValue("frequency") !== "기타");
     });
 
     document.getElementById("profileBtn").addEventListener("click", openProfileModal);

@@ -274,8 +274,12 @@ async function loadData() {
         }
     }
     const seeded = seedData();
-    fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
-    fs.writeFileSync(DATA_PATH, JSON.stringify(seeded, null, 2));
+    try {
+        fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
+        fs.writeFileSync(DATA_PATH, JSON.stringify(seeded, null, 2));
+    } catch (e) {
+        console.warn("[hygo] failed to write initial seed file (continuing in-memory):", e.message);
+    }
     return seeded;
 }
 
@@ -293,8 +297,12 @@ function persist() {
             }
             return;
         }
-        fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
-        await fs.promises.writeFile(DATA_PATH, JSON.stringify(data, null, 2));
+        try {
+            fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
+            await fs.promises.writeFile(DATA_PATH, JSON.stringify(data, null, 2));
+        } catch (e) {
+            console.warn("[hygo] local file write failed:", e.message);
+        }
     });
     return writeChain;
 }
@@ -351,6 +359,9 @@ const broadcast = () => hygoNamespace.emit("state", publicState());
 app.get("/api/hygo/state", (req, res) => res.json(publicState()));
 
 app.get("/api/hygo/photo/:id", async (req, res) => {
+    // id는 항상 서버가 uid()로 생성한 영숫자 문자열이어야 한다. 검증 없이 파일 경로(로컬 저장 모드)에
+    // 그대로 꽂으면 "../"가 섞인 값으로 저장 폴더 밖의 파일을 읽어내는 경로 순회 공격이 가능해진다.
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.id)) return res.status(400).send("Invalid id");
     try {
         const dataUri = await loadPhoto(req.params.id);
         if (!dataUri) return res.status(404).send("Not found");
@@ -828,7 +839,7 @@ app.post("/api/hygo/admin/missions", requireAdmin, (req, res) => {
 
     const mission = {
         key: cleanKey, category, label: String(label).trim(), emoji: String(emoji || "🎯").trim(),
-        points: Number(points) || 0,
+        points: Math.max(0, Number(points) || 0),
     };
     data.missions.push(mission);
     persist();
@@ -850,7 +861,7 @@ app.put("/api/hygo/admin/missions/:key", requireAdmin, (req, res) => {
         mission.label = String(label).trim();
     }
     if (emoji !== undefined && String(emoji).trim()) mission.emoji = String(emoji).trim();
-    if (points !== undefined) mission.points = Number(points) || 0;
+    if (points !== undefined) mission.points = Math.max(0, Number(points) || 0);
 
     persist();
     broadcast();
@@ -906,8 +917,10 @@ app.delete("/api/hygo/admin/activity-options/:name", requireAdmin, (req, res) =>
 
 // ---------- AI 자동배정 ----------
 // 규칙 기반 그리디 클러스터링. 우선순위: 0) 서로가 서로를 지목한 짝, 1) 가능 시간 겹침,
-// 2) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임), 그 외 주말 가능 여부·활동 빈도는
-// 같은 사람끼리, 활동 스타일은 팀 안에서 고르게 섞이도록 보너스/페널티를 준다.
+// 2) 성별(팀마다 최대한 반반), 3) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임),
+// 4) 나이, 5) 학번 — 나이·학번은 서로 비슷한 사람끼리 묶는다.
+// 그 외 주말 가능 여부·활동 빈도는 같은 사람끼리, 활동 스타일은 팀 안에서 고르게 섞이도록
+// 보너스/페널티를 준다.
 const TEAM_VIBE_EXTREMES = ["활동 엄청 열심히", "부담 없이"];
 const FREQUENCY_ORDER = { "거의 매일": 3, "주 3~4회": 2, "주 1~2회": 1 };
 
@@ -938,10 +951,65 @@ function frequencyCloseness(a, b) {
     return 1 - Math.min(1, Math.abs(sa - sb) / 2);
 }
 
+function ageFromBirthdate(birthdate) {
+    if (!birthdate) return null;
+    const d = new Date(birthdate);
+    if (Number.isNaN(d.getTime())) return null;
+    return (Date.now() - d.getTime()) / (365.25 * 86400000);
+}
+
+function ageCloseness(a, b) {
+    const ageA = ageFromBirthdate(a.birthdate);
+    const ageB = ageFromBirthdate(b.birthdate);
+    if (ageA == null || ageB == null) return 0;
+    return 1 - Math.min(1, Math.abs(ageA - ageB) / 4);
+}
+
+// 학번은 보통 앞자리가 입학연도라서(예: 2021012345 → 2021), 그 4자리만 비교해 동기끼리 가깝게 묶는다.
+function studentYear(studentId) {
+    const prefix = String(studentId || "").slice(0, 4);
+    return /^\d{4}$/.test(prefix) ? Number(prefix) : null;
+}
+
+function studentIdCloseness(a, b) {
+    const ya = studentYear(a.studentId);
+    const yb = studentYear(b.studentId);
+    if (ya == null || yb == null) return 0;
+    return 1 - Math.min(1, Math.abs(ya - yb) / 3);
+}
+
+// 성별은 "비슷한 사람끼리 묶기"가 아니라 "팀마다 최대한 반반"이 목표라서, 나머지 항목과 달리
+// 팀에 이미 같은 성별이 많을수록 그 팀에 넣는 점수가 낮아지고, 부족할수록 높아진다.
+function genderBalanceScore(gender, members) {
+    if (!gender) return 0;
+    let same = 0, other = 0;
+    members.forEach(m => {
+        if (!m.gender) return;
+        if (m.gender === gender) same++; else other++;
+    });
+    const total = same + other;
+    if (!total) return 0;
+    // -1(이미 이 성별로 꽉 참) ~ +1(이 성별이 하나도 없어서 넣으면 균형에 좋음) 범위로 정규화한다.
+    // 정규화 안 하면 팀 인원이 많아질수록 값이 커져서, 원래 최우선인 "팀 인원수 균형" 페널티(50점)를
+    // 뒤엎어버리는 문제가 있었다.
+    return (other - same) / total;
+}
+
 function runAutoAssign() {
     const appByUserId = new Map(data.applications.map(a => [a.userId, a]));
     const eligible = data.users.filter(u => u.registered && u.teamId == null && appByUserId.has(u.id));
     if (!eligible.length) return { assignedCount: 0, teamSizes: {} };
+
+    // 신청서(선호 항목)와 회원 인적사항(성별/생년월일/학번)을 합쳐서 채점용 프로필을 만든다.
+    function buildProfile(u) {
+        const app = appByUserId.get(u.id) || {};
+        return {
+            userId: u.id, gender: u.gender, birthdate: u.birthdate, studentId: u.studentId,
+            activityStyle: app.activityStyle, teamVibe: app.teamVibe, availability: app.availability,
+            weekendAvailability: app.weekendAvailability, frequency: app.frequency,
+        };
+    }
+    const profileByUserId = new Map(eligible.map(u => [u.id, buildProfile(u)]));
 
     const norm = s => String(s || "").trim().toLowerCase();
     const byName = new Map();
@@ -979,32 +1047,35 @@ function runAutoAssign() {
     const targetSize = new Map(teams.map(t => [t.id, base]));
     for (let i = 0; i < remainder; i++) targetSize.set(sortedByCount[i].id, targetSize.get(sortedByCount[i].id) + 1);
 
+    // 이미 배정돼 있는 팀원은 신청서를 안 냈어도(수동 배정 등) 성별/나이/학번 균형 계산에는 포함한다.
     const teamMembers = new Map(teams.map(t => [
-        t.id, data.users.filter(u => u.teamId === t.id).map(u => appByUserId.get(u.id)).filter(Boolean),
+        t.id, data.users.filter(u => u.teamId === t.id).map(buildProfile),
     ]));
     const teamCount = new Map(teams.map(t => [t.id, currentCount.get(t.id)]));
 
-    function scoreUnitForTeam(unitApps, teamId) {
+    function scoreUnitForTeam(unitProfiles, teamId) {
         const members = teamMembers.get(teamId);
-        const size = teamCount.get(teamId);
-        const target = targetSize.get(teamId);
         let score = 0;
-        if (size + unitApps.length > target) score -= 50 * (size + unitApps.length - target);
-        if (!members.length) return score;
 
-        unitApps.forEach(app => {
-            let avail = 0, vibe = 0, weekend = 0, freq = 0, sameStyle = 0;
+        unitProfiles.forEach(profile => {
+            score += 20 * genderBalanceScore(profile.gender, members);
+            if (!members.length) return;
+            let avail = 0, vibe = 0, weekend = 0, freq = 0, sameStyle = 0, age = 0, sid = 0;
             members.forEach(m => {
-                avail += availabilityOverlap(app, m);
-                vibe += vibeCompatibility(app, m);
-                weekend += app.weekendAvailability === m.weekendAvailability ? 1 : 0;
-                freq += frequencyCloseness(app, m);
-                sameStyle += app.activityStyle === m.activityStyle ? 1 : 0;
+                avail += availabilityOverlap(profile, m);
+                vibe += vibeCompatibility(profile, m);
+                weekend += profile.weekendAvailability === m.weekendAvailability ? 1 : 0;
+                freq += frequencyCloseness(profile, m);
+                sameStyle += profile.activityStyle === m.activityStyle ? 1 : 0;
+                age += ageCloseness(profile, m);
+                sid += studentIdCloseness(profile, m);
             });
             const n = members.length;
             score += 30 * (avail / n);
             score += 15 * (vibe / n);
+            score += 12 * (age / n);
             score += 10 * (weekend / n);
+            score += 8 * (sid / n);
             score += 8 * (freq / n);
             score += 5 * (1 - sameStyle / n);
         });
@@ -1012,16 +1083,20 @@ function runAutoAssign() {
     }
 
     units.forEach(unit => {
-        const unitApps = unit.userIds.map(id => appByUserId.get(id));
-        let best = teams[0], bestScore = -Infinity;
-        teams.forEach(t => {
-            const s = scoreUnitForTeam(unitApps, t.id);
+        const unitProfiles = unit.userIds.map(id => profileByUserId.get(id));
+        // 팀 인원수 균형은 다른 항목들과 점수를 다투게 하지 않고 하드 제약으로 둔다: 목표 인원 안에
+        // 들어갈 수 있는 팀이 하나라도 있으면 그 안에서만 고르고, 전부 꽉 찼을 때만 넘치는 걸 허용한다.
+        const withinTarget = teams.filter(t => teamCount.get(t.id) + unitProfiles.length <= targetSize.get(t.id));
+        const candidates = withinTarget.length ? withinTarget : teams;
+        let best = candidates[0], bestScore = -Infinity;
+        candidates.forEach(t => {
+            const s = scoreUnitForTeam(unitProfiles, t.id);
             if (s > bestScore) { bestScore = s; best = t; }
         });
         unit.userIds.forEach(id => {
             data.users.find(u => u.id === id).teamId = best.id;
         });
-        teamMembers.get(best.id).push(...unitApps);
+        teamMembers.get(best.id).push(...unitProfiles);
         teamCount.set(best.id, teamCount.get(best.id) + unit.userIds.length);
     });
 
@@ -1050,10 +1125,14 @@ app.post("/api/hygo/admin/test-bots", requireAdmin, (req, res) => {
     for (let i = 0; i < count; i++) {
         const id = "bot_" + uid();
         const nickname = `테스트봇${Math.floor(1000 + Math.random() * 9000)}`;
+        const admissionYear = 2019 + Math.floor(Math.random() * 6); // 2019~2024학번
+        const birthYear = 2000 + Math.floor(Math.random() * 6); // 2000~2005년생
+        const pad2 = n => String(n).padStart(2, "0");
         data.users.push({
             id, nickname, profileImage: "", teamId: null, registered: true, createdAt: new Date().toISOString(),
-            name: `테스트회원${i + 1}`, studentId: `test${1000 + i}`, department: "테스트학과",
-            birthdate: "2002-01-01", phone: "010-0000-0000", gender: pick(GENDER_OPTIONS),
+            name: `테스트회원${i + 1}`, studentId: `${admissionYear}${String(100000 + i).padStart(6, "0")}`, department: "테스트학과",
+            birthdate: `${birthYear}-${pad2(1 + Math.floor(Math.random() * 12))}-${pad2(1 + Math.floor(Math.random() * 28))}`,
+            phone: "010-0000-0000", gender: pick(GENDER_OPTIONS),
         });
 
         const availability = {};
@@ -1167,6 +1246,10 @@ app.post("/api/hygo/reset", requireAdmin, async (req, res) => {
     const keepUsers = data.users;
     data = seedData();
     data.users = keepUsers; // 계정(카카오 로그인)은 점수/미션 초기화와 별개로 유지한다
+    // 초기화 전에 관리자가 팀을 추가했었다면(9번 팀 이상), 그 팀 소속이던 사람들의 teamId가
+    // 방금 새로 만든 기본 8팀 어디에도 없는 값으로 붕 뜬 채 남는다 — 미배정으로 되돌린다.
+    const validTeamIds = new Set(data.teams.map(t => t.id));
+    data.users.forEach(u => { if (u.teamId != null && !validTeamIds.has(u.teamId)) u.teamId = null; });
     persist();
     broadcast();
     res.json({ ok: true });
@@ -1211,14 +1294,17 @@ app.post("/api/hygo/import", requireAdmin, async (req, res) => {
         importedSubmissions.push(clone);
     }
 
-    data = {
-        teams: incoming.teams,
+    data = normalizeCampaign({
+        teams: incoming.teams.map(t => ({ ...t, points: Number(t.points) || 0, missionsCount: Number(t.missionsCount) || 0 })),
         submissions: importedSubmissions,
         adjustments: incoming.adjustments,
         nextTeamId: incoming.nextTeamId || (Math.max(0, ...incoming.teams.map(t => t.id)) + 1),
-        campaign: (incoming.campaign && incoming.campaign.start && incoming.campaign.end) ? incoming.campaign : { ...DEFAULT_CAMPAIGN },
-        users: Array.isArray(incoming.users) ? incoming.users : [],
-    };
+        campaign: incoming.campaign,
+        users: incoming.users,
+        missions: incoming.missions,
+        applications: incoming.applications,
+        activityOptions: incoming.activityOptions,
+    });
     persist();
     broadcast();
     res.json({ ok: true });
@@ -1226,6 +1312,12 @@ app.post("/api/hygo/import", requireAdmin, async (req, res) => {
     for (const sub of oldSubmissions) {
         if (isStoredPhotoRef(sub.photo)) await deletePhoto(photoRefId(sub.photo));
     }
+});
+
+// 예상 못한 비동기 에러 하나 때문에 서버 전체가 죽는 것을 막는 최후의 안전망.
+// (예: fire-and-forget로 호출한 어딘가에서 처리 안 된 예외가 나는 경우)
+process.on("unhandledRejection", err => {
+    console.error("[hygo] unhandled promise rejection (server kept running):", err);
 });
 
 async function main() {
