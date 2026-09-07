@@ -264,9 +264,6 @@ function normalizeCampaign(parsed) {
     if (!Array.isArray(parsed.missions) || !parsed.missions.length) parsed.missions = DEFAULT_MISSIONS.map(m => ({ ...m }));
     parsed.missions.forEach(m => { if (m.points == null) m.points = 0; });
     if (!Array.isArray(parsed.applications)) parsed.applications = [];
-    // 탈퇴 등으로 사용자가 사라졌는데 신청서만 남아있는 경우를 정리한다 (통계 집계가 부풀려지는 원인이었음).
-    const existingUserIds = new Set(parsed.users.map(u => u.id));
-    parsed.applications = parsed.applications.filter(a => existingUserIds.has(a.userId));
     if (!Array.isArray(parsed.activityOptions) || !parsed.activityOptions.length) parsed.activityOptions = DEFAULT_ACTIVITY_OPTIONS.slice();
     if (parsed.applicationDeadline === undefined) parsed.applicationDeadline = null;
     if (!Array.isArray(parsed.pushSubscriptions)) parsed.pushSubscriptions = [];
@@ -278,6 +275,7 @@ function normalizeCampaign(parsed) {
             if (!s.reactedBy || typeof s.reactedBy !== "object") s.reactedBy = {};
             if (!s.reactions || typeof s.reactions !== "object") s.reactions = emptyReactions();
             REACTION_TYPES.forEach(key => { if (typeof s.reactions[key] !== "number") s.reactions[key] = 0; });
+            if (!Array.isArray(s.participantList)) s.participantList = [];
         });
     }
     return parsed;
@@ -374,6 +372,15 @@ function sanitizeUser(u) {
 function publicState() {
     const { applications, ...rest } = data;
     return { ...rest, users: data.users.map(sanitizeUser) };
+}
+
+// 탈퇴 등으로 사용자가 사라졌는데 신청서만 남아있는 경우, 집계/조회에서만 제외한다.
+// (예전엔 서버가 새로 켜질 때마다 이 조건으로 data.applications 자체를 지워버렸는데,
+//  id 타입이 어쩌다 안 맞는 등의 이유로 멀쩡한 신청서까지 통째로 날아가는 사고로 이어질 수 있어서
+//  원본 데이터는 절대 건드리지 않고 보여줄 때만 걸러내는 방식으로 바꿨다.)
+function liveApplications() {
+    const existingUserIds = new Set(data.users.map(u => String(u.id)));
+    return data.applications.filter(a => existingUserIds.has(String(a.userId)));
 }
 
 const app = express();
@@ -584,9 +591,21 @@ app.get("/api/hygo/applications/me", requireLogin, (req, res) => {
     res.json({ application: application || null });
 });
 
+// 미션 인증 제출 시 "참여 인원"을 이름으로 직접 고를 수 있도록, 같은 팀원 명단(이름만)을 내려준다.
+// 같이 미션을 수행한 사람들끼리는 어차피 서로 이름을 아는 사이라 팀 범위로 한정해서 공개해도 괜찮다.
+app.get("/api/hygo/team/mine/members", requireLogin, (req, res) => {
+    const user = req.hygoUser;
+    if (!user.teamId) return res.json({ members: [] });
+    const members = data.users
+        .filter(u => u.teamId === user.teamId && u.registered)
+        .map(u => ({ id: u.id, name: u.name }));
+    res.json({ members });
+});
+
 app.delete("/api/hygo/auth/withdraw", requireLogin, (req, res) => {
     data.users = data.users.filter(u => u.id !== req.hygoUser.id);
     data.applications = data.applications.filter(a => a.userId !== req.hygoUser.id);
+    data.pushSubscriptions = (data.pushSubscriptions || []).filter(s => s.userId !== req.hygoUser.id);
     persist();
     broadcast();
     res.clearCookie("hygo_uid");
@@ -598,7 +617,7 @@ app.get("/api/hygo/admin/users", requireAdmin, (req, res) => {
 });
 
 app.get("/api/hygo/admin/applications", requireAdmin, (req, res) => {
-    res.json({ applications: data.applications });
+    res.json({ applications: liveApplications() });
 });
 
 app.put("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
@@ -627,6 +646,7 @@ app.delete("/api/hygo/admin/users/:id", requireAdmin, (req, res) => {
     if (!exists) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
     data.users = data.users.filter(u => u.id !== req.params.id);
     data.applications = data.applications.filter(a => a.userId !== req.params.id);
+    data.pushSubscriptions = (data.pushSubscriptions || []).filter(s => s.userId !== req.params.id);
     persist();
     broadcast();
     res.json({ ok: true });
@@ -651,7 +671,7 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
     const user = req.hygoUser;
     if (!user.registered) return res.status(400).json({ error: "먼저 회원가입(인적사항 입력)을 완료해주세요." });
     if (!user.teamId) return res.status(400).json({ error: "아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요." });
-    const { missionKey, participants, memo, photo } = req.body || {};
+    const { missionKey, participantIds, memo, photo } = req.body || {};
     const mission = missionByKey(missionKey);
     const team = data.teams.find(t => t.id === user.teamId);
 
@@ -662,9 +682,18 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
             s.teamId === team.id && s.missionKey === mission.key && (s.status === "pending" || s.status === "approved"));
         if (already) return res.status(400).json({ error: "이미 진행했거나 진행 중인 돌발 미션이에요. 돌발 미션은 팀당 1번만 수행할 수 있어요." });
     }
-    if (!Number.isFinite(Number(participants)) || Number(participants) < 3) {
-        return res.status(400).json({ error: "참여 인원은 최소 3명 이상이어야 합니다." });
+    // 참여 인원은 숫자로 직접 입력받는 대신, 실제로 우리 팀에 있는 사람 중에서 골라야 한다
+    // (엉뚱한 사람 이름을 적어내는 걸 막고, 나중에 개인별 기여 점수를 정확히 계산하기 위함).
+    const teamMembers = data.users.filter(u => u.teamId === team.id && u.registered);
+    const teamMemberIds = new Set(teamMembers.map(u => u.id));
+    const chosenIds = Array.isArray(participantIds) ? [...new Set(participantIds.map(String))].filter(pid => teamMemberIds.has(pid)) : [];
+    if (chosenIds.length < 3) {
+        return res.status(400).json({ error: "참여 인원은 우리 팀원 중 최소 3명 이상 선택해주세요." });
     }
+    const participantList = chosenIds.map(pid => {
+        const u = teamMembers.find(x => x.id === pid);
+        return { id: u.id, name: u.name };
+    });
     if (!memo || !String(memo).trim()) return res.status(400).json({ error: "한 줄 메모를 입력해주세요." });
     if (!photo || !String(photo).startsWith("data:image/")) {
         return res.status(400).json({ error: "인증 사진을 업로드해주세요." });
@@ -673,7 +702,7 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
     const id = uid();
     const sub = {
         id, teamId: team.id, missionKey: mission.key, category: mission.category,
-        label: mission.label, emoji: mission.emoji, participants: Number(participants),
+        label: mission.label, emoji: mission.emoji, participants: participantList.length, participantList,
         memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
         authorId: user.id, comments: [], reactions: emptyReactions(), reactedBy: {},
     };

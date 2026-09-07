@@ -240,13 +240,13 @@
       </div>
 
       <div>
-        <label class="block text-xs font-semibold text-slate-400 mb-1.5">참여 인원 <span class="text-slate-500 font-normal">(최소 3명)</span></label>
-        <input id="participantCount" type="number" min="1" step="1" value="3" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">참여 인원 <span class="text-slate-500 font-normal">(최소 3명, 팀원 중에서 선택)</span></label>
+        <div id="participantPicker" class="space-y-1.5"></div>
       </div>
 
       <div>
-        <label class="block text-xs font-semibold text-slate-400 mb-1.5">한 줄 메모 / 참가자 이름</label>
-        <input id="memoInput" type="text" maxlength="80" placeholder="예: 김하이, 이인공, 박지능 - 저녁에 삼겹살 완食" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">한 줄 메모</label>
+        <input id="memoInput" type="text" maxlength="80" placeholder="예: 저녁에 삼겹살 완食!" required class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
       </div>
 
       <div>
@@ -1053,6 +1053,11 @@ window.HygoNav = (function(){
     const d = new Date(iso);
     return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   };
+  // 참여자를 이름으로 선택하기 전에 만들어진 오래된 인증 건은 participantList가 없을 수 있어서,
+  // 그런 경우엔 예전처럼 숫자만 보여준다.
+  const participantsLabel = s => (Array.isArray(s.participantList) && s.participantList.length)
+    ? `참여 ${s.participantList.length}명 (${s.participantList.map(p => escapeHtml(p.name)).join(", ")})`
+    : `참여 ${s.participants}명`;
 
   function toast(msg, type){
     const el = document.getElementById("toast");
@@ -1416,18 +1421,27 @@ window.HygoNav = (function(){
     document.getElementById("profileModal").classList.remove("hidden");
     HygoNav.pushModalHistory();
   }
+  // 미션은 여러 명이 같이 하는데 사진은 한 명만 올리다 보니, 예전엔 "기여 점수"가 내가 직접
+  // 올린 인증에만 매겨져서 같이 참여했지만 사진을 안 올린 팀원은 기여가 하나도 안 잡혔다.
+  // 이제 인증 제출할 때 참여자를 이름으로 직접 고르게 됐으니, 그 명단을 기준으로 계산한다.
+  function iParticipatedIn(s){
+    if (Array.isArray(s.participantList) && s.participantList.length) {
+      return s.participantList.some(p => p.id === currentUser.id);
+    }
+    return s.authorId === currentUser.id; // 참여자 명단이 없는 옛날 인증 건은 제출자를 참여자로 간주
+  }
   function renderMyStats(){
     const grid = document.getElementById("myStatsGrid");
     if (!currentUser){ grid.innerHTML = ""; return; }
     const mine = data.submissions.filter(s => s.authorId === currentUser.id);
-    const approved = mine.filter(s => s.status === "approved");
-    const points = approved.reduce((sum, s) => sum + (s.awardedPoints || 0), 0);
-    const reactions = mine.reduce((sum, s) => sum + Object.values(s.reactions || {}).reduce((a, b) => a + b, 0), 0);
+    const myTeamApproved = data.submissions.filter(s => s.teamId === currentUser.teamId && s.status === "approved");
+    const participated = data.submissions.filter(s => s.status === "approved" && iParticipatedIn(s));
+    const contributedPoints = participated.reduce((sum, s) => sum + (s.awardedPoints || 0), 0);
     const stats = [
       { label: "제출", value: mine.length },
-      { label: "승인", value: approved.length },
-      { label: "기여 점수", value: points },
-      { label: "받은 반응", value: reactions },
+      { label: "팀 제출 승인", value: myTeamApproved.length },
+      { label: "참여 미션", value: participated.length },
+      { label: "기여 점수", value: contributedPoints },
     ];
     grid.innerHTML = stats.map(s => `
       <div>
@@ -1517,6 +1531,26 @@ window.HygoNav = (function(){
     }
     updatePushToggleUI();
   }
+  // 로그아웃/탈퇴 시 이 브라우저에 남아있는 푸시 구독을 정리한다.
+  // 안 지우면 로그아웃해도 서버엔 구독이 그대로 남아서, 같은 카카오 계정으로 다른 기기에서
+  // 일어난 일(인증 승인 등) 알림이 이미 로그아웃한 이 기기에도 계속 온다.
+  async function unsubscribePushSilently(){
+    if (!pushSupported()) return;
+    try {
+      // navigator.serviceWorker.ready는 서비스워커가 끝까지 활성화되지 못하면 영원히 안 풀려서
+      // (등록 실패, 사생활 보호 모드 등) 로그아웃/탈퇴 자체가 멈춰버릴 수 있다. 최선을 다해 정리하되
+      // 오래 걸리면 그냥 포기하고 로그아웃은 계속 진행한다.
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("sw-timeout")), 2000)),
+      ]);
+      const sub = await reg.pushManager.getSubscription();
+      if (sub){
+        await apiSend("POST", "/api/hygo/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe();
+      }
+    } catch (e) {}
+  }
   async function saveProfile(e){
     e.preventDefault();
     const payload = {
@@ -1542,6 +1576,7 @@ window.HygoNav = (function(){
     const ok = await confirmModal("정말 탈퇴할까요? 계정 정보가 삭제되고 다시 로그인하면 회원가입부터 새로 진행해야 해요. 되돌릴 수 없어요.", { title: "회원 탈퇴", danger: true, okText: "탈퇴" });
     if (!ok) return;
     try {
+      await unsubscribePushSilently();
       await apiSend("DELETE", "/api/hygo/auth/withdraw");
       currentUser = null;
       closeProfileModal();
@@ -1608,6 +1643,7 @@ window.HygoNav = (function(){
   }
 
   async function logout(){
+    await unsubscribePushSilently();
     await apiSend("POST", "/api/hygo/auth/logout", {});
     currentUser = null;
     renderAuthUI();
@@ -1708,7 +1744,7 @@ window.HygoNav = (function(){
     document.getElementById(`tab-${name}`).classList.remove("hidden");
     document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === name));
     if (name === "leaderboard") renderLeaderboard();
-    if (name === "submit") { updateSubmitGate(); populateMissionSelect(); }
+    if (name === "submit") { updateSubmitGate(); populateMissionSelect(); ensureParticipantPicker(true); }
     if (name === "feed") renderFeed();
     if (name === "application") openApplicationTab();
     if (name === "admin") renderAdmin();
@@ -1888,7 +1924,7 @@ window.HygoNav = (function(){
               <span class="text-xs font-bold text-emerald-400 shrink-0">+${s.awardedPoints}</span>
             </div>
             <p class="text-[11px] text-slate-400 truncate">${escapeHtml(s.memo || "")}</p>
-            <p class="text-[10px] text-slate-500 mt-0.5">참여 ${s.participants}명 · ${fmtDate(s.approvedAt || s.createdAt)}</p>
+            <p class="text-[10px] text-slate-500 mt-0.5">${participantsLabel(s)} · ${fmtDate(s.approvedAt || s.createdAt)}</p>
           </div>
         </div>`).join("") +
         adjustments.map(a => {
@@ -1988,6 +2024,43 @@ window.HygoNav = (function(){
     if (!doneSurpriseKeys.has(prevValue) && (data.missions || []).some(m => m.key === prevValue)) sel.value = prevValue;
   }
 
+  // ---------- 참여 인원 선택 (팀원 명단에서 고르기) ----------
+  let participantPickerTeamId = null;
+  let teamMembersCache = [];
+  async function ensureParticipantPicker(force){
+    const wrap = document.getElementById("participantPicker");
+    if (!currentUser || !currentUser.teamId){
+      wrap.innerHTML = `<p class="text-xs text-slate-500">팀 배정 후 이용할 수 있어요.</p>`;
+      participantPickerTeamId = null;
+      return;
+    }
+    if (!force && participantPickerTeamId === currentUser.teamId) return;
+    wrap.innerHTML = `<p class="text-xs text-slate-500">팀원 목록을 불러오는 중...</p>`;
+    try {
+      const res = await apiGet("/api/hygo/team/mine/members");
+      teamMembersCache = res.members || [];
+      participantPickerTeamId = currentUser.teamId;
+      renderParticipantPicker();
+    } catch (e) {
+      wrap.innerHTML = `<p class="text-xs text-rose-400">팀원 목록을 불러오지 못했어요.</p>`;
+    }
+  }
+  function renderParticipantPicker(){
+    const wrap = document.getElementById("participantPicker");
+    if (!teamMembersCache.length){
+      wrap.innerHTML = `<p class="text-xs text-slate-500">팀원 정보가 없어요.</p>`;
+      return;
+    }
+    wrap.innerHTML = teamMembersCache.map(m => `
+      <label class="flex items-center gap-2 px-3 py-2 rounded-xl bg-black/20 border border-white/10 text-sm cursor-pointer hover:border-fuchsia-400/40 transition">
+        <input type="checkbox" data-participant="${escapeHtml(m.id)}" ${currentUser && m.id === currentUser.id ? "checked" : ""} class="w-4 h-4 accent-fuchsia-500">
+        <span>${escapeHtml(m.name)}</span>
+      </label>`).join("");
+  }
+  function getSelectedParticipantIds(){
+    return Array.from(document.querySelectorAll("#participantPicker [data-participant]:checked")).map(cb => cb.dataset.participant);
+  }
+
   function compressImage(file){
     return new Promise((resolve, reject) => {
       if (!file.type.startsWith("image/")) { reject(new Error("이미지 파일만 업로드할 수 있어요.")); return; }
@@ -2045,19 +2118,19 @@ window.HygoNav = (function(){
     if (!currentUser.registered){ toast("먼저 회원가입(인적사항 입력)을 완료해주세요.", "error"); showRegisterGate(); return; }
     if (!currentUser.teamId){ toast("아직 조 배정이 완료되지 않았어요. 관리자에게 문의해주세요.", "error"); return; }
     const missionKey = document.getElementById("missionSelect").value;
-    const participants = Number(document.getElementById("participantCount").value);
+    const participantIds = getSelectedParticipantIds();
     const memo = document.getElementById("memoInput").value.trim();
 
     if (photoProcessing){
       toast("이미지 처리가 끝날 때까지 잠시만 기다려주세요.", "error");
       return;
     }
-    if (participants < 3){
-      toast("참여 인원은 최소 3명 이상이어야 해요.", "error");
+    if (participantIds.length < 3){
+      toast("참여 인원은 팀원 중 최소 3명 이상 선택해주세요.", "error");
       return;
     }
     if (!memo){
-      toast("한 줄 메모 또는 참가자 이름을 입력해주세요.", "error");
+      toast("한 줄 메모를 입력해주세요.", "error");
       return;
     }
     if (!currentPhotoDataUrl){
@@ -2065,7 +2138,7 @@ window.HygoNav = (function(){
       return;
     }
 
-    const payload = { missionKey, participants, memo, photo: currentPhotoDataUrl };
+    const payload = { missionKey, participantIds, memo, photo: currentPhotoDataUrl };
 
     const btn = document.getElementById("submitBtn");
     btn.disabled = true;
@@ -2324,7 +2397,7 @@ window.HygoNav = (function(){
           </div>
           <p class="text-sm font-semibold text-white">${s.emoji} ${escapeHtml(s.label)}</p>
           <p class="text-xs text-slate-400 line-clamp-2">${escapeHtml(s.memo || "")}</p>
-          <p class="text-[10px] text-slate-500">참여 ${s.participants}명 · ${fmtDate(s.approvedAt || s.createdAt)}</p>
+          <p class="text-[10px] text-slate-500">${participantsLabel(s)} · ${fmtDate(s.approvedAt || s.createdAt)}</p>
           ${renderReactionsBar(s)}
           ${renderCommentsSection(s)}
         </div>
@@ -2675,7 +2748,7 @@ window.HygoNav = (function(){
             <span class="text-xs font-bold text-amber-400">${pts}점</span>
           </div>
           <p class="text-sm text-slate-300 truncate">${escapeHtml(s.memo || "")}</p>
-          <p class="text-[11px] text-slate-500">참여 ${s.participants}명 · ${fmtDate(s.createdAt)}</p>
+          <p class="text-[11px] text-slate-500">${participantsLabel(s)} · ${fmtDate(s.createdAt)}</p>
           <div class="flex gap-2 pt-1.5">
             <button data-approve="${s.id}" class="flex-1 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/30 transition">✅ 승인</button>
             <button data-reject="${s.id}" class="flex-1 py-1.5 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30 hover:bg-rose-500/30 transition">❌ 거절</button>
