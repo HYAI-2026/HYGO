@@ -653,6 +653,8 @@
 window.HygoNav = (function(){
   "use strict";
   let closingViaBackButton = false;
+  let suppressNextPopState = false;
+  let pendingModalHistoryCount = 0; // 중복으로 닫기가 두 번 불려도(빠른 연타 등) 히스토리를 더 소비하지 않도록 카운트
   const tabStack = ["leaderboard"];
   let lastExitPressAt = 0;
   const modalClosers = [];
@@ -662,10 +664,22 @@ window.HygoNav = (function(){
     return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
   }
   function pushModalHistory(){
+    pendingModalHistoryCount++;
     history.pushState({ hygoModal: true }, "");
   }
+  // 모달을 UI(배경 클릭, 닫기 버튼 등)로 닫을 때는 열 때 쌓아둔 히스토리 한 칸을 되돌려줘야 하는데,
+  // history.back()도 결국 popstate를 발생시킨다. 그런데 그 시점엔 모달이 이미 숨겨진 뒤라서
+  // handlePopState가 "닫을 모달이 없다"고 착각하고 탭 스택까지 건드려버리는 버그가 있었다
+  // (예: 프로필 모달을 배경 클릭으로 닫으면 갑자기 다른 탭으로 넘어가던 문제).
+  // 그래서 우리가 직접 부른 history.back()에서 나오는 popstate 딱 한 번은 무시하고,
+  // 같은 모달이 실수로 두 번 닫혀도(빠른 연타 등) 이미 소비된 항목을 또 소비하지 않게 카운트로 막는다.
   function popModalHistoryIfOwn(){
-    if (!closingViaBackButton) history.back();
+    if (pendingModalHistoryCount <= 0) return;
+    pendingModalHistoryCount--;
+    if (!closingViaBackButton) {
+      suppressNextPopState = true;
+      history.back();
+    }
   }
   function pushTab(name){
     if (tabStack[tabStack.length - 1] === name) return;
@@ -678,6 +692,10 @@ window.HygoNav = (function(){
   function setApplyTab(fn){ applyTabFn = fn; }
 
   function handlePopState(){
+    if (suppressNextPopState) {
+      suppressNextPopState = false;
+      return;
+    }
     const openModal = modalClosers.find(m => {
       const el = document.getElementById(m.id);
       return el && !el.classList.contains("hidden");
