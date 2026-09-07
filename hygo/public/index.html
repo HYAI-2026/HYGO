@@ -133,6 +133,15 @@
   html[data-theme="light"] .text-fuchsia-300 { color: #a21caf !important; }
   html[data-theme="light"] .text-sky-300 { color: #0369a1 !important; }
   html[data-theme="light"] .text-rose-200 { color: #be123c !important; }
+  html[data-theme="light"] .text-emerald-300 { color: #047857 !important; }
+  html[data-theme="light"] .text-emerald-400 { color: #047857 !important; }
+  /* 파일 선택(인증 사진 업로드) 버튼 — 어두운 배경 기준 연한 핑크 글자라 밝은 배경에서는 안 보여서 진하게 바꾼다 */
+  html[data-theme="light"] input[type="file"]::file-selector-button {
+    background: rgba(236,72,153,0.14);
+    border: 1px solid rgba(236,72,153,0.4);
+    color: #9d174d;
+  }
+  html[data-theme="light"] input[type="file"]::file-selector-button:hover { background: rgba(236,72,153,0.22); }
 </style>
 </head>
 <body class="min-h-screen text-slate-200 font-sans pb-24">
@@ -151,9 +160,6 @@
       </div>
     </div>
     <div class="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap w-full sm:w-auto sm:ml-auto justify-between sm:justify-end">
-      <button id="themeToggleBtn" type="button" title="화면 모드 전환" class="w-8 h-8 shrink-0 rounded-lg bg-black/30 border border-white/10 hover:border-fuchsia-400/40 transition flex items-center justify-center text-sm">
-        <span id="themeToggleIcon">🌙</span>
-      </button>
       <button id="installBtn" type="button" class="hidden items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 transition shrink-0">
         <span>📲</span><span>앱 설치</span>
       </button>
@@ -647,9 +653,14 @@
       <div id="myStatsGrid" class="grid grid-cols-4 gap-2 text-center"></div>
     </div>
 
-    <button id="pushToggleBtn" type="button" class="w-full py-2.5 rounded-xl font-bold text-xs bg-black/20 border border-white/10 hover:border-fuchsia-400/40 transition flex items-center justify-center gap-1.5">
-      <span id="pushToggleIcon">🔔</span><span id="pushToggleLabel">알림 받기</span>
-    </button>
+    <div class="grid grid-cols-2 gap-2">
+      <button id="themeToggleBtn" type="button" class="py-2.5 rounded-xl font-bold text-xs bg-black/20 border border-white/10 hover:border-fuchsia-400/40 transition flex items-center justify-center gap-1.5">
+        <span id="themeToggleIcon">🌙</span><span id="themeToggleLabel">다크 모드</span>
+      </button>
+      <button id="pushToggleBtn" type="button" class="py-2.5 rounded-xl font-bold text-xs bg-black/20 border border-white/10 hover:border-fuchsia-400/40 transition flex items-center justify-center gap-1.5">
+        <span id="pushToggleIcon">🔔</span><span id="pushToggleLabel">알림 받기</span>
+      </button>
+    </div>
 
     <form id="profileForm" class="space-y-3">
       <div>
@@ -1057,6 +1068,7 @@ window.HygoNav = (function(){
   function applyTheme(theme){
     document.documentElement.setAttribute("data-theme", theme);
     document.getElementById("themeToggleIcon").textContent = theme === "light" ? "☀️" : "🌙";
+    document.getElementById("themeToggleLabel").textContent = theme === "light" ? "라이트 모드" : "다크 모드";
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", THEME_COLOR[theme]);
     try { localStorage.setItem("hygoTheme", theme); } catch (e) { /* 저장 안 돼도 화면 전환 자체는 된다 */ }
