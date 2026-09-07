@@ -8,6 +8,7 @@ const path = require("path");
 const http = require("http");
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const webpush = require("web-push");
 const { Server: SocketIOServer } = require("socket.io");
 
 const ADMIN_PASSWORD = process.env.HYGO_ADMIN_PASSWORD || "hyai0926";
@@ -15,6 +16,14 @@ const DAILY_CASUAL_CAP = 15;
 const DATA_PATH = path.join(__dirname, "data", "hygo-data.json");
 const DEFAULT_CAMPAIGN = { start: "2026-09-21", end: "2026-10-30" };
 const WEBHOOK_URL = process.env.HYGO_WEBHOOK_URL || "";
+
+// ---------- 웹 푸시 알림 ----------
+// VAPID 키는 환경변수로 직접 지정할 수도 있고, 지정 안 하면 최초 실행 시 한 번 만들어서
+// data(=Redis/파일)에 저장해두고 계속 재사용한다 — 재시작마다 키가 바뀌면 그동안 모은 구독이
+// 전부 무효가 되기 때문이다.
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:hyai.hanyang@gmail.com";
+let VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+let VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 
 // ---------- 카카오 로그인 ----------
 // KAKAO_*_URL은 기본값이 실제 카카오 서버지만, 로컬 테스트 때는 가짜 서버로 오버라이드해서 검증한다.
@@ -114,6 +123,27 @@ function notifyWebhook(message) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: message, text: message }),
     }).catch(err => console.warn("[hygo] webhook notify failed:", err.message));
+}
+
+// 특정 유저에게 웹 푸시 알림을 보낸다. 구독이 만료/취소된 경우(404, 410) 목록에서 제거한다.
+async function sendPushToUser(userId, payload) {
+    const subs = (data.pushSubscriptions || []).filter(s => s.userId === userId);
+    if (!subs.length) return;
+    const body = JSON.stringify(payload);
+    let changed = false;
+    await Promise.all(subs.map(async (s) => {
+        try {
+            await webpush.sendNotification(s.subscription, body);
+        } catch (e) {
+            if (e.statusCode === 404 || e.statusCode === 410) {
+                data.pushSubscriptions = data.pushSubscriptions.filter(x => x.subscription.endpoint !== s.subscription.endpoint);
+                changed = true;
+            } else {
+                console.warn("[hygo] push send failed:", e.message);
+            }
+        }
+    }));
+    if (changed) persist();
 }
 
 const DEFAULT_MISSIONS = [
@@ -220,7 +250,8 @@ function seedData() {
     return {
         teams, submissions, adjustments, nextTeamId: 9, campaign: { ...DEFAULT_CAMPAIGN }, users: [],
         missions: DEFAULT_MISSIONS.map(m => ({ ...m })),
-        applications: [], activityOptions: DEFAULT_ACTIVITY_OPTIONS.slice(),
+        applications: [], activityOptions: DEFAULT_ACTIVITY_OPTIONS.slice(), applicationDeadline: null,
+        pushSubscriptions: [], vapidKeys: null,
     };
 }
 
@@ -237,6 +268,9 @@ function normalizeCampaign(parsed) {
     const existingUserIds = new Set(parsed.users.map(u => u.id));
     parsed.applications = parsed.applications.filter(a => existingUserIds.has(a.userId));
     if (!Array.isArray(parsed.activityOptions) || !parsed.activityOptions.length) parsed.activityOptions = DEFAULT_ACTIVITY_OPTIONS.slice();
+    if (parsed.applicationDeadline === undefined) parsed.applicationDeadline = null;
+    if (!Array.isArray(parsed.pushSubscriptions)) parsed.pushSubscriptions = [];
+    if (parsed.vapidKeys === undefined) parsed.vapidKeys = null;
     if (Array.isArray(parsed.submissions)) {
         parsed.submissions.forEach(s => {
             if (!Array.isArray(s.comments)) s.comments = [];
@@ -526,6 +560,9 @@ function validateApplicationPayload(body) {
 app.post("/api/hygo/applications", requireLogin, (req, res) => {
     const user = req.hygoUser;
     if (!user.registered) return res.status(400).json({ error: "먼저 회원가입(인적사항 입력)을 완료해주세요." });
+    if (data.applicationDeadline && Date.now() > new Date(data.applicationDeadline).getTime()) {
+        return res.status(400).json({ error: "신청서 접수가 마감됐어요." });
+    }
     const result = validateApplicationPayload(req.body);
     if (result.error) return res.status(400).json({ error: result.error });
 
@@ -683,6 +720,13 @@ app.post("/api/hygo/submissions/:id/approve", requireAdmin, (req, res) => {
 
     persist();
     broadcast();
+    if (sub.authorId) {
+        sendPushToUser(sub.authorId, {
+            title: "✅ 인증이 승인됐어요",
+            body: `${mission.emoji} ${mission.label} · +${award}점`,
+            url: "/",
+        });
+    }
     res.json({ ok: true, awardedPoints: award, capApplied, teamName: team.name });
 });
 
@@ -694,6 +738,13 @@ app.post("/api/hygo/submissions/:id/reject", requireAdmin, (req, res) => {
     sub.rejectionReason = ((req.body || {}).reason || "").trim();
     persist();
     broadcast();
+    if (sub.authorId) {
+        sendPushToUser(sub.authorId, {
+            title: "❌ 인증이 거절됐어요",
+            body: sub.rejectionReason ? `${sub.emoji} ${sub.label} · ${sub.rejectionReason}` : `${sub.emoji} ${sub.label}`,
+            url: "/",
+        });
+    }
     res.json({ ok: true });
 });
 
@@ -716,7 +767,39 @@ app.post("/api/hygo/submissions/:id/comments", requireLogin, (req, res) => {
     sub.comments.push(comment);
     persist();
     broadcast();
+    if (sub.authorId && sub.authorId !== user.id) {
+        sendPushToUser(sub.authorId, {
+            title: "💬 댓글이 달렸어요",
+            body: `${sub.emoji} ${sub.label} · "${comment.text}"`,
+            url: "/",
+        });
+    }
     res.json({ ok: true, comment });
+});
+
+app.get("/api/hygo/push/vapid-public-key", (req, res) => {
+    res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post("/api/hygo/push/subscribe", requireLogin, (req, res) => {
+    const user = req.hygoUser;
+    const subscription = (req.body || {}).subscription;
+    if (!subscription || !subscription.endpoint) {
+        return res.status(400).json({ error: "올바르지 않은 구독 정보입니다." });
+    }
+    if (!Array.isArray(data.pushSubscriptions)) data.pushSubscriptions = [];
+    data.pushSubscriptions = data.pushSubscriptions.filter(s => s.subscription.endpoint !== subscription.endpoint);
+    data.pushSubscriptions.push({ userId: user.id, subscription, createdAt: new Date().toISOString() });
+    persist();
+    res.json({ ok: true });
+});
+
+app.post("/api/hygo/push/unsubscribe", requireLogin, (req, res) => {
+    const endpoint = (req.body || {}).endpoint;
+    if (!endpoint) return res.status(400).json({ error: "올바르지 않은 요청입니다." });
+    data.pushSubscriptions = (data.pushSubscriptions || []).filter(s => s.subscription.endpoint !== endpoint);
+    persist();
+    res.json({ ok: true });
 });
 
 app.post("/api/hygo/comments/:id/report", requireLogin, (req, res) => {
@@ -918,6 +1001,20 @@ app.delete("/api/hygo/admin/activity-options/:name", requireAdmin, (req, res) =>
     persist();
     broadcast();
     res.json({ ok: true, activityOptions: data.activityOptions });
+});
+
+app.post("/api/hygo/admin/application-deadline", requireAdmin, (req, res) => {
+    const raw = (req.body || {}).deadline;
+    if (raw === null || raw === "") {
+        data.applicationDeadline = null;
+    } else {
+        const d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "날짜 형식이 올바르지 않습니다." });
+        data.applicationDeadline = d.toISOString();
+    }
+    persist();
+    broadcast();
+    res.json({ ok: true, applicationDeadline: data.applicationDeadline });
 });
 
 // ---------- AI 자동배정 ----------
@@ -1192,12 +1289,16 @@ app.delete("/api/hygo/admin/test-bots", requireAdmin, (req, res) => {
 });
 
 // 거절된(rejected) 인증은 점수에 영향이 없어서, 팀원이 사유를 확인한 뒤 직접 지울 수 있게
-// 관리자 암호 없이도 삭제를 허용한다. 대기/승인 상태는 그대로 관리자만 지울 수 있다.
+// 관리자 암호 없이도 삭제를 허용한다. 대기(pending) 상태도 마찬가지로 점수에 아직 반영 안 됐으니
+// 제출한 본인이 직접 취소할 수 있게 한다. 승인된(approved) 건은 점수에 영향을 주므로 관리자만 지운다.
 app.delete("/api/hygo/submissions/:id", async (req, res) => {
     const idx = data.submissions.findIndex(s => s.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: "인증을 찾을 수 없습니다." });
     const sub = data.submissions[idx];
-    if (sub.status !== "rejected" && req.get("x-admin-password") !== ADMIN_PASSWORD) {
+    const isAdminReq = req.get("x-admin-password") === ADMIN_PASSWORD;
+    const currentUser = getCurrentUser(req);
+    const isOwnPending = sub.status === "pending" && currentUser && sub.authorId === currentUser.id;
+    if (sub.status !== "rejected" && !isOwnPending && !isAdminReq) {
         return res.status(401).json({ error: "관리자 암호가 올바르지 않습니다." });
     }
     if (sub.status === "approved") {
@@ -1327,6 +1428,17 @@ process.on("unhandledRejection", err => {
 
 async function main() {
     data = await loadData();
+
+    if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+        if (!data.vapidKeys) {
+            data.vapidKeys = webpush.generateVAPIDKeys();
+            persist();
+        }
+        VAPID_PUBLIC_KEY = data.vapidKeys.publicKey;
+        VAPID_PRIVATE_KEY = data.vapidKeys.privateKey;
+    }
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
     const PORT = process.env.HYGO_PORT || 4000;
     server.listen(PORT, "0.0.0.0", () => {
         console.log(`HY-GO server running on port ${PORT}`);
