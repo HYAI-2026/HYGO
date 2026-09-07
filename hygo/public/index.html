@@ -645,6 +645,71 @@
   </div>
 </div>
 
+<!-- 모바일/PWA 뒤로가기 통합 처리: 사진 확대나 팝업을 열었을 때 뒤로가기를 누르면 앱을 벗어나는
+     대신 그 화면만 닫히게 하고, 탭을 이동한 뒤 뒤로가기를 누르면 이전 탭으로 돌아가게 한다.
+     홈 화면에 설치된 앱(PWA)에서는 뒤로가기를 두 번 연속으로 눌러야 실제로 종료되게 해서
+     실수로 앱이 꺼지는 걸 막는다. 두 IIFE(설치 안내 / 메인 앱)가 같이 쓸 수 있도록 전역에 둔다. -->
+<script>
+window.HygoNav = (function(){
+  "use strict";
+  let closingViaBackButton = false;
+  const tabStack = ["leaderboard"];
+  let lastExitPressAt = 0;
+  const modalClosers = [];
+  let applyTabFn = null;
+
+  function isStandalonePWA(){
+    return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  }
+  function pushModalHistory(){
+    history.pushState({ hygoModal: true }, "");
+  }
+  function popModalHistoryIfOwn(){
+    if (!closingViaBackButton) history.back();
+  }
+  function pushTab(name){
+    if (tabStack[tabStack.length - 1] === name) return;
+    tabStack.push(name);
+    history.pushState({ hygoTab: name }, "");
+  }
+  function registerModalCloser(id, close){
+    modalClosers.push({ id, close });
+  }
+  function setApplyTab(fn){ applyTabFn = fn; }
+
+  function handlePopState(){
+    const openModal = modalClosers.find(m => {
+      const el = document.getElementById(m.id);
+      return el && !el.classList.contains("hidden");
+    });
+    if (openModal) {
+      closingViaBackButton = true;
+      openModal.close();
+      closingViaBackButton = false;
+      return;
+    }
+    if (tabStack.length > 1) {
+      tabStack.pop();
+      if (applyTabFn) applyTabFn(tabStack[tabStack.length - 1]);
+      return;
+    }
+    if (isStandalonePWA()) {
+      const now = Date.now();
+      if (now - lastExitPressAt < 2000) return; // 짧은 시간 안에 한 번 더 누르면 그냥 종료되게 둔다
+      lastExitPressAt = now;
+      history.pushState({ hygoExitGuard: true }, "");
+      if (window.hygoToast) window.hygoToast("뒤로가기를 한 번 더 누르면 앱이 종료돼요");
+    }
+  }
+
+  window.addEventListener("popstate", handlePopState);
+  history.replaceState({ hygoRoot: true }, "");
+  if (isStandalonePWA()) history.pushState({ hygoExitGuard: true }, "");
+
+  return { pushModalHistory, popModalHistoryIfOwn, pushTab, registerModalCloser, setApplyTab };
+})();
+</script>
+
 <!-- PWA: 서비스 워커 등록 & 홈 화면 추가 -->
 <script>
 (function(){
@@ -767,6 +832,7 @@
     }
     renderGuide();
     modal.classList.remove("hidden");
+    HygoNav.pushModalHistory();
   });
 
   document.getElementById("installCopyLink").addEventListener("click", async e => {
@@ -787,8 +853,13 @@
     setTimeout(() => { el.textContent = "링크 복사"; }, 1800);
   });
 
-  document.getElementById("installModalClose").addEventListener("click", () => modal.classList.add("hidden"));
-  modal.addEventListener("click", e => { if (e.target === modal) modal.classList.add("hidden"); });
+  function closeInstallModal(){
+    modal.classList.add("hidden");
+    HygoNav.popModalHistoryIfOwn();
+  }
+  document.getElementById("installModalClose").addEventListener("click", closeInstallModal);
+  modal.addEventListener("click", e => { if (e.target === modal) closeInstallModal(); });
+  HygoNav.registerModalCloser("installModal", closeInstallModal);
 
   window.addEventListener("appinstalled", () => { deferredPrompt = null; hideBtn(); });
 })();
@@ -853,6 +924,7 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.add("hidden"), 2800);
   }
+  window.hygoToast = toast;
 
   function confirmModal(message, opts){
     opts = opts || {};
@@ -865,9 +937,11 @@
       okBtn.className = "flex-1 py-2.5 rounded-xl font-bold text-sm transition " +
         (opts.danger ? "bg-rose-500 hover:bg-rose-400 text-white" : "bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 text-white");
       document.getElementById("confirmModal").classList.remove("hidden");
+      HygoNav.pushModalHistory();
 
       function cleanup(result){
         document.getElementById("confirmModal").classList.add("hidden");
+        HygoNav.popModalHistoryIfOwn();
         okBtn.removeEventListener("click", onOk);
         cancelBtn.removeEventListener("click", onCancel);
         resolve(result);
@@ -891,10 +965,12 @@
       input.placeholder = opts.placeholder || "";
       okBtn.textContent = opts.okText || "확인";
       document.getElementById("promptModal").classList.remove("hidden");
+      HygoNav.pushModalHistory();
       input.focus();
 
       function cleanup(result){
         document.getElementById("promptModal").classList.add("hidden");
+        HygoNav.popModalHistoryIfOwn();
         okBtn.removeEventListener("click", onOk);
         cancelBtn.removeEventListener("click", onCancel);
         input.removeEventListener("keydown", onKeydown);
@@ -1177,9 +1253,11 @@
     document.getElementById("profPhone").value = me.phone || "";
     document.getElementById("profGender").value = me.gender || "";
     document.getElementById("profileModal").classList.remove("hidden");
+    HygoNav.pushModalHistory();
   }
   function closeProfileModal(){
     document.getElementById("profileModal").classList.add("hidden");
+    HygoNav.popModalHistoryIfOwn();
   }
   async function saveProfile(e){
     e.preventDefault();
@@ -1333,7 +1411,7 @@
     }
   }
 
-  function switchTab(name){
+  function applyTab(name){
     document.querySelectorAll("[id^='tab-']").forEach(sec => sec.classList.add("hidden"));
     document.getElementById(`tab-${name}`).classList.remove("hidden");
     document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === name));
@@ -1342,6 +1420,12 @@
     if (name === "feed") renderFeed();
     if (name === "application") openApplicationTab();
     if (name === "admin") renderAdmin();
+  }
+  // 탭 전환은 뒤로가기로도 되짚어갈 수 있도록 히스토리에 남긴다 (모바일에서 탭 여러 번 이동한 뒤
+  // 뒤로가기를 누르면 앱을 벗어나는 대신 이전 탭으로 돌아간다).
+  function switchTab(name){
+    applyTab(name);
+    HygoNav.pushTab(name);
   }
 
   // ---------- leaderboard ----------
@@ -1380,9 +1464,11 @@
     currentSelectedDate = null;
     renderTeamHistory(teamId);
     document.getElementById("historyModal").classList.remove("hidden");
+    HygoNav.pushModalHistory();
   }
   function closeHistoryModal(){
     document.getElementById("historyModal").classList.add("hidden");
+    HygoNav.popModalHistoryIfOwn();
     currentHistoryTeamId = null;
     currentSelectedDate = null;
   }
@@ -1921,10 +2007,12 @@
   function openLightbox(src){
     document.getElementById("photoLightboxImg").src = src;
     document.getElementById("photoLightbox").classList.remove("hidden");
+    HygoNav.pushModalHistory();
   }
   function closeLightbox(){
     document.getElementById("photoLightbox").classList.add("hidden");
     document.getElementById("photoLightboxImg").src = "";
+    HygoNav.popModalHistoryIfOwn();
   }
 
   // ---------- admin ----------
@@ -2026,6 +2114,7 @@
     const viewEl = document.getElementById("memberApplicationView");
     viewEl.innerHTML = `<p class="text-slate-500">불러오는 중...</p>`;
     document.getElementById("memberModal").classList.remove("hidden");
+    HygoNav.pushModalHistory();
 
     try {
       const appsRes = await apiSend("GET", "/api/hygo/admin/applications");
@@ -2056,6 +2145,7 @@
   }
   function closeMemberModal(){
     document.getElementById("memberModal").classList.add("hidden");
+    HygoNav.popModalHistoryIfOwn();
     memberModalUserId = null;
   }
   async function saveMemberProfile(e){
@@ -2586,6 +2676,14 @@
 
   // ---------- init ----------
   async function init(){
+    HygoNav.setApplyTab(applyTab);
+    HygoNav.registerModalCloser("confirmModal", () => document.getElementById("confirmModalCancel").click());
+    HygoNav.registerModalCloser("promptModal", () => document.getElementById("promptModalCancel").click());
+    HygoNav.registerModalCloser("photoLightbox", closeLightbox);
+    HygoNav.registerModalCloser("historyModal", closeHistoryModal);
+    HygoNav.registerModalCloser("memberModal", closeMemberModal);
+    HygoNav.registerModalCloser("profileModal", closeProfileModal);
+
     document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
     document.getElementById("logoTapTarget").addEventListener("click", handleLogoTap);
 
