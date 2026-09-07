@@ -620,6 +620,11 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
 
     if (!mission) return res.status(400).json({ error: "올바르지 않은 미션 유형입니다." });
     if (!team) return res.status(400).json({ error: "소속 팀을 찾을 수 없습니다. 팀을 다시 선택해주세요." });
+    if (mission.category === "돌발") {
+        const already = data.submissions.some(s =>
+            s.teamId === team.id && s.missionKey === mission.key && (s.status === "pending" || s.status === "approved"));
+        if (already) return res.status(400).json({ error: "이미 진행했거나 진행 중인 돌발 미션이에요. 돌발 미션은 팀당 1번만 수행할 수 있어요." });
+    }
     if (!Number.isFinite(Number(participants)) || Number(participants) < 3) {
         return res.status(400).json({ error: "참여 인원은 최소 3명 이상이어야 합니다." });
     }

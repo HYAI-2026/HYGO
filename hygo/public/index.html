@@ -1431,21 +1431,48 @@ window.HygoNav = (function(){
   // ---------- leaderboard ----------
   function renderLeaderboard(){
     const el = document.getElementById("leaderboardList");
-    const sorted = [...data.teams].sort((a, b) => b.points - a.points || a.id - b.id);
+
+    // 동점일 때: 1) 돌발미션 수행 개수 많은 조, 2) 그래도 같으면 전체 수행 미션 개수 많은 조 순으로 순위를 매긴다.
+    const surpriseCounts = {};
+    data.submissions.forEach(s => {
+      if (s.status === "approved" && s.category === "돌발") {
+        surpriseCounts[s.teamId] = (surpriseCounts[s.teamId] || 0) + 1;
+      }
+    });
+    const surpriseOf = id => surpriseCounts[id] || 0;
+    const tieKeyOf = team => `${team.points}|${surpriseOf(team.id)}|${team.missionsCount}`;
+
+    const sorted = [...data.teams].sort((a, b) =>
+      b.points - a.points ||
+      surpriseOf(b.id) - surpriseOf(a.id) ||
+      b.missionsCount - a.missionsCount ||
+      a.id - b.id
+    );
+
+    // 순위·공동순위 여부 계산 (표준 스포츠 순위 방식: 공동 1위가 2팀이면 다음은 3위)
+    const ranks = sorted.map((team, idx) => {
+      if (idx > 0 && tieKeyOf(team) === tieKeyOf(sorted[idx - 1])) return null; // 위와 같은 순위, 아래서 채움
+      return idx + 1;
+    });
+    for (let i = 1; i < ranks.length; i++) if (ranks[i] === null) ranks[i] = ranks[i - 1];
+    const rankCounts = {};
+    ranks.forEach(r => { rankCounts[r] = (rankCounts[r] || 0) + 1; });
+
     const medal = ["👑", "🥈", "🥉"];
     const rankClass = ["rank-1", "rank-2", "rank-3"];
 
     el.innerHTML = sorted.map((team, idx) => {
-      const rank = idx + 1;
-      const isTop3 = idx < 3;
+      const rank = ranks[idx];
+      const isTied = rankCounts[rank] > 1;
+      const isTop3 = rank <= 3;
       return `
-      <button data-team="${team.id}" class="team-row w-full text-left glass ${isTop3 ? rankClass[idx] : ""} rounded-2xl px-4 py-3.5 flex items-center gap-3.5 hover:scale-[1.01] hover:border-fuchsia-400/40 transition">
+      <button data-team="${team.id}" class="team-row w-full text-left glass ${isTop3 ? rankClass[rank - 1] : ""} rounded-2xl px-4 py-3.5 flex items-center gap-3.5 hover:scale-[1.01] hover:border-fuchsia-400/40 transition">
         <div class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-lg font-extrabold ${isTop3 ? "bg-white/10" : "bg-black/30 text-slate-400"}">
-          ${isTop3 ? medal[idx] : rank}
+          ${isTop3 ? medal[rank - 1] : rank}
         </div>
         <div class="flex-1 min-w-0">
-          <p class="font-bold text-white truncate">${escapeHtml(team.name)}</p>
-          <p class="text-[11px] text-slate-500">달성 미션 ${team.missionsCount}개</p>
+          <p class="font-bold text-white truncate">${escapeHtml(team.name)}${isTied ? ` <span class="text-[10px] font-semibold text-fuchsia-300 align-middle">공동 ${rank}위</span>` : ""}</p>
+          <p class="text-[11px] text-slate-500">달성 미션 ${team.missionsCount}개 · 돌발 ${surpriseOf(team.id)}개</p>
         </div>
         <div class="text-right shrink-0">
           <p class="text-lg font-extrabold bg-gradient-to-r from-fuchsia-300 to-orange-200 bg-clip-text text-transparent">${team.points}</p>
@@ -1647,13 +1674,26 @@ window.HygoNav = (function(){
   function populateMissionSelect(){
     const sel = document.getElementById("missionSelect");
     const prevValue = sel.value;
+    const teamId = currentUser ? currentUser.teamId : null;
+    // 돌발 미션은 팀당 1번만 수행할 수 있어서, 이미 우리 팀이 진행했거나(승인) 진행 중인(대기) 건 목록에서 뺀다.
+    const doneSurpriseKeys = new Set(
+      data.submissions
+        .filter(s => teamId && s.teamId === teamId && s.category === "돌발" && (s.status === "pending" || s.status === "approved"))
+        .map(s => s.missionKey)
+    );
     const groups = { "일상": [], "돌발": [] };
-    (data.missions || []).forEach(m => groups[m.category].push(m));
-    sel.innerHTML = Object.entries(groups).map(([cat, list]) => `
+    (data.missions || []).forEach(m => {
+      if (m.category === "돌발" && doneSurpriseKeys.has(m.key)) return;
+      groups[m.category].push(m);
+    });
+    sel.innerHTML = Object.entries(groups).map(([cat, list]) => {
+      if (!list.length) return "";
+      return `
       <optgroup label="${cat === "일상" ? "🌤️ 일상 미션" : "🎯 돌발 미션"}">
         ${list.map(m => `<option value="${m.key}">${m.emoji} ${m.label} (${m.points}점)</option>`).join("")}
-      </optgroup>`).join("");
-    if ((data.missions || []).some(m => m.key === prevValue)) sel.value = prevValue;
+      </optgroup>`;
+    }).join("");
+    if (!doneSurpriseKeys.has(prevValue) && (data.missions || []).some(m => m.key === prevValue)) sel.value = prevValue;
   }
 
   function compressImage(file){
