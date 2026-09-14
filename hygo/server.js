@@ -1047,11 +1047,18 @@ app.post("/api/hygo/admin/application-deadline", requireAdmin, (req, res) => {
 });
 
 // ---------- AI 자동배정 ----------
-// 규칙 기반 그리디 클러스터링. 우선순위: 0) 서로가 서로를 지목한 짝, 1) 가능 시간 겹침,
-// 2) 성별(팀마다 최대한 반반), 3) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임),
-// 4) 나이, 5) 학번 — 나이·학번은 서로 비슷한 사람끼리 묶는다.
-// 그 외 주말 가능 여부·활동 빈도는 같은 사람끼리, 활동 스타일은 팀 안에서 고르게 섞이도록
-// 보너스/페널티를 준다.
+// 규칙 기반 그리디 클러스터링. 우선순위:
+// 0) 서로가 서로를 지목한 짝은 반드시 같은 팀.
+// 1) 성별 — 팀 인원수와 마찬가지로 하드 제약. 예전엔 점수 가점(+20)일 뿐이라 시간대·나이 등
+//    다른 항목들이 잘 맞는 지원자들끼리 몰리면 그 가점을 눌러버려서 한쪽 성별로만 채워지는
+//    팀이 나올 수 있었다. 이제는 팀마다 "이 성별은 최대 N명까지" 상한을 먼저 계산해두고,
+//    그 상한을 넘기는 팀은 아예 후보에서 제외한다(전체 지원자 성비가 반반이 아니면 상한도
+//    그 비율에 비례해서 정해지므로, 실제로 존재하는 인원 안에서 최대한 고르게 나뉜다).
+// 2) 가능 시간 겹침, 3) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임),
+// 4) 나이, 5) 학과(같은 학과끼리 몰리지 않도록 다양하게 섞음), 6) 학번 — 나이·학번은
+// 서로 비슷한 사람끼리 묶는다. 그 외 주말 가능 여부·활동 빈도는 같은 사람끼리, 활동 스타일은
+// 팀 안에서 고르게 섞이도록 보너스/페널티를 준다.
+// "하고 싶은 활동"(선호 활동)과 "기타 의견"은 자유 서술/선택이라 배정 로직에는 반영하지 않는다.
 const TEAM_VIBE_EXTREMES = ["활동 엄청 열심히", "부담 없이"];
 const FREQUENCY_ORDER = { "거의 매일": 3, "주 3~4회": 2, "주 1~2회": 1 };
 
@@ -1109,21 +1116,11 @@ function studentIdCloseness(a, b) {
     return 1 - Math.min(1, Math.abs(ya - yb) / 3);
 }
 
-// 성별은 "비슷한 사람끼리 묶기"가 아니라 "팀마다 최대한 반반"이 목표라서, 나머지 항목과 달리
-// 팀에 이미 같은 성별이 많을수록 그 팀에 넣는 점수가 낮아지고, 부족할수록 높아진다.
-function genderBalanceScore(gender, members) {
-    if (!gender) return 0;
-    let same = 0, other = 0;
-    members.forEach(m => {
-        if (!m.gender) return;
-        if (m.gender === gender) same++; else other++;
-    });
-    const total = same + other;
-    if (!total) return 0;
-    // -1(이미 이 성별로 꽉 참) ~ +1(이 성별이 하나도 없어서 넣으면 균형에 좋음) 범위로 정규화한다.
-    // 정규화 안 하면 팀 인원이 많아질수록 값이 커져서, 원래 최우선인 "팀 인원수 균형" 페널티(50점)를
-    // 뒤엎어버리는 문제가 있었다.
-    return (other - same) / total;
+// 학과는 "비슷한 사람끼리"가 아니라 반대로 "다양하게 섞기"가 목표라서(네트워킹 동아리 취지),
+// 같은 학과면 감점, 다르면 가점을 준다 — activityStyle과 반대 극성인 vibeCompatibility와 비슷한 결.
+function departmentDiversity(a, b) {
+    if (!a.department || !b.department) return 0;
+    return a.department === b.department ? -1 : 1;
 }
 
 function runAutoAssign() {
@@ -1131,11 +1128,11 @@ function runAutoAssign() {
     const eligible = data.users.filter(u => u.registered && u.teamId == null && appByUserId.has(u.id));
     if (!eligible.length) return { assignedCount: 0, teamSizes: {} };
 
-    // 신청서(선호 항목)와 회원 인적사항(성별/생년월일/학번)을 합쳐서 채점용 프로필을 만든다.
+    // 신청서(선호 항목)와 회원 인적사항(성별/생년월일/학번/학과)을 합쳐서 채점용 프로필을 만든다.
     function buildProfile(u) {
         const app = appByUserId.get(u.id) || {};
         return {
-            userId: u.id, gender: u.gender, birthdate: u.birthdate, studentId: u.studentId,
+            userId: u.id, gender: u.gender, birthdate: u.birthdate, studentId: u.studentId, department: u.department,
             activityStyle: app.activityStyle, teamVibe: app.teamVibe, availability: app.availability,
             weekendAvailability: app.weekendAvailability, frequency: app.frequency,
         };
@@ -1178,20 +1175,41 @@ function runAutoAssign() {
     const targetSize = new Map(teams.map(t => [t.id, base]));
     for (let i = 0; i < remainder; i++) targetSize.set(sortedByCount[i].id, targetSize.get(sortedByCount[i].id) + 1);
 
-    // 이미 배정돼 있는 팀원은 신청서를 안 냈어도(수동 배정 등) 성별/나이/학번 균형 계산에는 포함한다.
+    // 이미 배정돼 있는 팀원은 신청서를 안 냈어도(수동 배정 등) 성별/나이/학번/학과 균형 계산에는 포함한다.
     const teamMembers = new Map(teams.map(t => [
         t.id, data.users.filter(u => u.teamId === t.id).map(buildProfile),
     ]));
     const teamCount = new Map(teams.map(t => [t.id, currentCount.get(t.id)]));
 
+    // 성별 상한: 팀 인원수 목표와 똑같은 방식으로, "전체 지원자(+이미 배정된 사람) 성비"를
+    // 팀 목표 인원 수에 비례해서 나눈다 — 지원자 전체가 정확히 반반이 아니면 상한도 그 비율을
+    // 따라간다(억지로 5:5를 강요하면 애초에 그럴 수 없는 경우 배정이 안 끝난다). +1은 인원수를
+    // 딱 나눠떨어지게 못 맞추는 반올림 오차를 흡수하는 여유분이다.
+    const allProfilesForGender = [...teams.flatMap(t => teamMembers.get(t.id)), ...eligible.map(u => profileByUserId.get(u.id))];
+    const genderTotals = {};
+    allProfilesForGender.forEach(p => { if (p.gender) genderTotals[p.gender] = (genderTotals[p.gender] || 0) + 1; });
+    const totalWithGender = Object.values(genderTotals).reduce((a, b) => a + b, 0);
+    function genderCap(teamId, gender) {
+        if (!totalWithGender || !genderTotals[gender]) return Infinity;
+        return Math.ceil(targetSize.get(teamId) * (genderTotals[gender] / totalWithGender)) + 1;
+    }
+    function unitFitsGenderCap(teamId, unitProfiles) {
+        const members = teamMembers.get(teamId);
+        const addCounts = {};
+        unitProfiles.forEach(p => { if (p.gender) addCounts[p.gender] = (addCounts[p.gender] || 0) + 1; });
+        return Object.entries(addCounts).every(([gender, addN]) => {
+            const current = members.filter(m => m.gender === gender).length;
+            return current + addN <= genderCap(teamId, gender);
+        });
+    }
+
     function scoreUnitForTeam(unitProfiles, teamId) {
         const members = teamMembers.get(teamId);
+        if (!members.length) return 0;
         let score = 0;
 
         unitProfiles.forEach(profile => {
-            score += 20 * genderBalanceScore(profile.gender, members);
-            if (!members.length) return;
-            let avail = 0, vibe = 0, weekend = 0, freq = 0, sameStyle = 0, age = 0, sid = 0;
+            let avail = 0, vibe = 0, weekend = 0, freq = 0, sameStyle = 0, age = 0, sid = 0, dept = 0;
             members.forEach(m => {
                 avail += availabilityOverlap(profile, m);
                 vibe += vibeCompatibility(profile, m);
@@ -1200,11 +1218,13 @@ function runAutoAssign() {
                 sameStyle += profile.activityStyle === m.activityStyle ? 1 : 0;
                 age += ageCloseness(profile, m);
                 sid += studentIdCloseness(profile, m);
+                dept += departmentDiversity(profile, m);
             });
             const n = members.length;
             score += 30 * (avail / n);
             score += 15 * (vibe / n);
             score += 12 * (age / n);
+            score += 10 * (dept / n);
             score += 10 * (weekend / n);
             score += 8 * (sid / n);
             score += 8 * (freq / n);
@@ -1213,23 +1233,62 @@ function runAutoAssign() {
         return score;
     }
 
-    units.forEach(unit => {
+    function commitUnitToTeam(unit, team) {
         const unitProfiles = unit.userIds.map(id => profileByUserId.get(id));
-        // 팀 인원수 균형은 다른 항목들과 점수를 다투게 하지 않고 하드 제약으로 둔다: 목표 인원 안에
-        // 들어갈 수 있는 팀이 하나라도 있으면 그 안에서만 고르고, 전부 꽉 찼을 때만 넘치는 걸 허용한다.
-        const withinTarget = teams.filter(t => teamCount.get(t.id) + unitProfiles.length <= targetSize.get(t.id));
-        const candidates = withinTarget.length ? withinTarget : teams;
+        unit.userIds.forEach(id => {
+            data.users.find(u => u.id === id).teamId = team.id;
+        });
+        teamMembers.get(team.id).push(...unitProfiles);
+        teamCount.set(team.id, teamCount.get(team.id) + unit.userIds.length);
+    }
+    // 팀 인원수 균형과 성별 균형은 다른 항목들과 점수를 다투게 하지 않고 하드 제약으로 둔다:
+    // 두 조건을 모두 만족하는 팀이 있으면 그 안에서만 고르고, 없으면 인원수 조건까지만이라도
+    // 지키는 팀으로, 그마저도 없으면(전부 꽉 찼을 때) 전체 팀으로 범위를 넓힌다.
+    function candidateTeamsFor(unitProfiles, teamPool) {
+        const withinTarget = teamPool.filter(t => teamCount.get(t.id) + unitProfiles.length <= targetSize.get(t.id));
+        const sizeCandidates = withinTarget.length ? withinTarget : teamPool;
+        const withinGender = sizeCandidates.filter(t => unitFitsGenderCap(t.id, unitProfiles));
+        return withinGender.length ? withinGender : sizeCandidates;
+    }
+
+    // 1) 서로 지목한 짝은 먼저 배정한다 — 수가 적고(보통 한두 쌍) 이미 본인들이 원해서 맺어진
+    //    관계라 "가장 잘 맞는 팀"을 그대로 골라주면 된다.
+    const pairUnits = units.filter(u => u.userIds.length > 1);
+    pairUnits.forEach(unit => {
+        const unitProfiles = unit.userIds.map(id => profileByUserId.get(id));
+        const candidates = candidateTeamsFor(unitProfiles, teams);
         let best = candidates[0], bestScore = -Infinity;
         candidates.forEach(t => {
             const s = scoreUnitForTeam(unitProfiles, t.id);
             if (s > bestScore) { bestScore = s; best = t; }
         });
-        unit.userIds.forEach(id => {
-            data.users.find(u => u.id === id).teamId = best.id;
-        });
-        teamMembers.get(best.id).push(...unitProfiles);
-        teamCount.set(best.id, teamCount.get(best.id) + unit.userIds.length);
+        commitUnitToTeam(unit, best);
     });
+
+    // 2) 나머지 개인들은 "유닛마다 제일 잘 맞는 팀 고르기"가 아니라 거꾸로 "제일 인원이 부족한
+    //    팀부터, 거기에 넣을 사람 중 제일 잘 맞는 사람 고르기"로 채운다. 원래 방식대로 유닛
+    //    순서대로 팀을 고르면, 빈 팀은 항상 점수가 0이라 이미 한두 명 채워진 팀(=다른 항목이
+    //    우연히 잘 맞을 확률이 있는 팀)이 계속 더 높은 점수를 받아 그 팀에만 몰리는 쏠림이
+    //    생긴다 — 처음 신고받은 "한쪽 성별만 있는 조"도 이 쏠림 때문에 성별 가점(+20)이
+    //    다른 항목들에 밀려서 생긴 문제였다. "제일 부족한 팀부터 채우기"로 뒤집으면 이런
+    //    쏠림 자체가 구조적으로 생기지 않는다.
+    const remaining = units.filter(u => u.userIds.length === 1);
+    while (remaining.length) {
+        const needy = [...teams]
+            .filter(t => teamCount.get(t.id) < targetSize.get(t.id))
+            .sort((a, b) => teamCount.get(a.id) - teamCount.get(b.id) || a.id - b.id);
+        const team = needy.length ? needy[0] : [...teams].sort((a, b) => teamCount.get(a.id) - teamCount.get(b.id))[0];
+
+        const genderOk = remaining.filter(u => unitFitsGenderCap(team.id, u.userIds.map(id => profileByUserId.get(id))));
+        const pool = genderOk.length ? genderOk : remaining;
+        let bestUnit = pool[0], bestScore = -Infinity;
+        pool.forEach(u => {
+            const s = scoreUnitForTeam(u.userIds.map(id => profileByUserId.get(id)), team.id);
+            if (s > bestScore) { bestScore = s; bestUnit = u; }
+        });
+        commitUnitToTeam(bestUnit, team);
+        remaining.splice(remaining.indexOf(bestUnit), 1);
+    }
 
     return {
         assignedCount: eligible.length,
