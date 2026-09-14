@@ -1049,11 +1049,11 @@ app.post("/api/hygo/admin/application-deadline", requireAdmin, (req, res) => {
 // ---------- AI 자동배정 ----------
 // 규칙 기반 그리디 클러스터링. 우선순위:
 // 0) 서로가 서로를 지목한 짝은 반드시 같은 팀.
-// 1) 성별 — 팀 인원수와 마찬가지로 하드 제약. 예전엔 점수 가점(+20)일 뿐이라 시간대·나이 등
-//    다른 항목들이 잘 맞는 지원자들끼리 몰리면 그 가점을 눌러버려서 한쪽 성별로만 채워지는
-//    팀이 나올 수 있었다. 이제는 팀마다 "이 성별은 최대 N명까지" 상한을 먼저 계산해두고,
-//    그 상한을 넘기는 팀은 아예 후보에서 제외한다(전체 지원자 성비가 반반이 아니면 상한도
-//    그 비율에 비례해서 정해지므로, 실제로 존재하는 인원 안에서 최대한 고르게 나뉜다).
+// 1) 성별 — 팀 인원수와 마찬가지로 하드 제약. 팀마다 "이 성별은 정확히 N명"까지 목표치를
+//    먼저 계산해두고(전체 지원자 성비를 팀 인원수에 비례배분), 그 목표치를 넘기는 팀은
+//    아예 후보에서 제외한다. 상한에 여유분을 두면 예를 들어 7명 팀에서 남6:여1처럼 여전히
+//    심하게 치우친 조합도 "상한은 안 넘었다"고 통과해버려서, 여유분 없이 딱 맞는 정수
+//    목표치로 강제한다(전체 지원자 성비가 반반이 아니면 목표치도 그 비율을 따라간다).
 // 2) 가능 시간 겹침, 3) 팀 분위기(단, "엄청 열심히"↔"부담 없이"는 최대한 안 붙임),
 // 4) 나이, 5) 학과(같은 학과끼리 몰리지 않도록 다양하게 섞음), 6) 학번 — 나이·학번은
 // 서로 비슷한 사람끼리 묶는다. 그 외 주말 가능 여부·활동 빈도는 같은 사람끼리, 활동 스타일은
@@ -1181,17 +1181,45 @@ function runAutoAssign() {
     ]));
     const teamCount = new Map(teams.map(t => [t.id, currentCount.get(t.id)]));
 
-    // 성별 상한: 팀 인원수 목표와 똑같은 방식으로, "전체 지원자(+이미 배정된 사람) 성비"를
-    // 팀 목표 인원 수에 비례해서 나눈다 — 지원자 전체가 정확히 반반이 아니면 상한도 그 비율을
-    // 따라간다(억지로 5:5를 강요하면 애초에 그럴 수 없는 경우 배정이 안 끝난다). +1은 인원수를
-    // 딱 나눠떨어지게 못 맞추는 반올림 오차를 흡수하는 여유분이다.
+    // 성별 목표 인원: 팀 인원수 목표와 똑같은 "기본값 + 나머지는 부족한 쪽부터 1명씩" 방식으로,
+    // 각 팀마다 "이 성별은 정확히 몇 명"까지 미리 못박아둔다. 예전엔 "비율로 계산한 상한 + 여유 1명"
+    // 방식이라, 7명 팀에서 남자 상한이 6명까지 허용돼서 남6:여1처럼 여전히 심하게 치우친 팀이
+    // "상한은 안 넘었다"는 이유로 그냥 통과돼버렸다. 이번엔 여유분 없이 "이 팀은 남자 4명, 여자
+    // 3명" 식으로 정확한 목표치를 정해두고 그 안에서 한 명도 안 넘도록 한다.
     const allProfilesForGender = [...teams.flatMap(t => teamMembers.get(t.id)), ...eligible.map(u => profileByUserId.get(u.id))];
     const genderTotals = {};
     allProfilesForGender.forEach(p => { if (p.gender) genderTotals[p.gender] = (genderTotals[p.gender] || 0) + 1; });
     const totalWithGender = Object.values(genderTotals).reduce((a, b) => a + b, 0);
+
+    // total명을 팀별 targetSize에 비례해서 정수로 정확히 나눈다(나머지는 소수부 큰 팀부터 1명씩) —
+    // 팀 인원수 나머지를 배분할 때 쓰는 것과 동일한 최대잉여법(Hare-Niemeyer)이다.
+    function apportionByTeam(total) {
+        if (!total || !totalWithGender) return new Map(teams.map(t => [t.id, 0]));
+        const rows = teams.map(t => {
+            const exact = targetSize.get(t.id) * (total / totalWithGender);
+            return { id: t.id, base: Math.floor(exact), frac: exact - Math.floor(exact) };
+        });
+        const leftover = total - rows.reduce((s, r) => s + r.base, 0);
+        [...rows].sort((a, b) => b.frac - a.frac || a.id - b.id).slice(0, leftover).forEach(r => { r.base += 1; });
+        return new Map(rows.map(r => [r.id, r.base]));
+    }
+    // 성별 옵션은 지금은 2개(남성/여성)뿐이라, 한쪽을 비례배분하고 나머지는 "팀 목표 인원 - 그 값"으로
+    // 정하면 팀별 합계가 항상 정확히 targetSize와 맞아떨어진다. 혹시 옵션이 3개 이상으로 늘어나면
+    // 각자 독립적으로 비례배분하는 쪽으로 자연스럽게 폴백된다(합이 살짝 안 맞을 수 있지만 하드
+    // 제약이 아예 없는 것보다는 훨씬 낫다).
+    const genderKeys = Object.keys(genderTotals);
+    const genderTargetByTeam = new Map();
+    if (genderKeys.length === 2) {
+        const [g1, g2] = genderKeys;
+        const target1 = apportionByTeam(genderTotals[g1]);
+        genderTargetByTeam.set(g1, target1);
+        genderTargetByTeam.set(g2, new Map(teams.map(t => [t.id, targetSize.get(t.id) - target1.get(t.id)])));
+    } else {
+        genderKeys.forEach(g => genderTargetByTeam.set(g, apportionByTeam(genderTotals[g])));
+    }
     function genderCap(teamId, gender) {
-        if (!totalWithGender || !genderTotals[gender]) return Infinity;
-        return Math.ceil(targetSize.get(teamId) * (genderTotals[gender] / totalWithGender)) + 1;
+        const map = genderTargetByTeam.get(gender);
+        return map ? map.get(teamId) : Infinity;
     }
     function unitFitsGenderCap(teamId, unitProfiles) {
         const members = teamMembers.get(teamId);
