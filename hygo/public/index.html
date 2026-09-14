@@ -135,6 +135,7 @@
   html[data-theme="light"] .text-rose-200 { color: #be123c !important; }
   html[data-theme="light"] .text-emerald-300 { color: #047857 !important; }
   html[data-theme="light"] .text-emerald-400 { color: #047857 !important; }
+  html[data-theme="light"] .text-amber-400 { color: #b45309 !important; }
   /* 파일 선택(인증 사진 업로드) 버튼 — 어두운 배경 기준 연한 핑크 글자라 밝은 배경에서는 안 보여서 진하게 바꾼다 */
   html[data-theme="light"] input[type="file"]::file-selector-button {
     background: rgba(236,72,153,0.14);
@@ -558,6 +559,20 @@
       <button id="historyModalClose" class="text-slate-400 hover:text-white text-xl leading-none shrink-0 ml-3">&times;</button>
     </div>
     <div id="historyModalBody" class="overflow-y-auto px-5 py-4 space-y-5"></div>
+  </div>
+</div>
+
+<!-- Team Detail Modal (Admin) -->
+<div id="teamDetailModal" class="hidden fixed inset-0 z-[69] modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div class="glass w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col animate-popIn">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+      <div class="min-w-0">
+        <h3 id="teamDetailModalTitle" class="font-bold text-white truncate">팀 상세</h3>
+        <p id="teamDetailModalSubtitle" class="text-[11px] text-slate-500 mt-0.5"></p>
+      </div>
+      <button id="teamDetailModalClose" class="text-slate-400 hover:text-white text-xl leading-none shrink-0 ml-3">&times;</button>
+    </div>
+    <div id="teamDetailModalBody" class="overflow-y-auto px-5 py-4 space-y-5"></div>
   </div>
 </div>
 
@@ -2530,13 +2545,117 @@ window.HygoNav = (function(){
     el.innerHTML = rows.map(r => {
       const inactive = r.daysSince == null || r.daysSince >= 7;
       return `
-      <div class="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2.5 border ${inactive ? "border-rose-400/30" : "border-white/5"}">
+      <button type="button" data-view-team-detail="${r.team.id}" class="w-full flex items-center justify-between bg-black/20 rounded-lg px-3 py-2.5 border ${inactive ? "border-rose-400/30" : "border-white/5"} hover:bg-white/5 hover:border-fuchsia-400/30 transition text-left">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-white truncate">${escapeHtml(r.team.name)}${inactive ? ' <span class="text-[10px] text-rose-300 font-bold">⚠️ 활동 저조</span>' : ""}</p>
           <p class="text-[11px] text-slate-500">최근 7일 ${r.recentCount}건 · 총 ${r.totalCount}건${r.daysSince != null ? ` · 마지막 인증 ${r.daysSince}일 전` : " · 인증 기록 없음"}</p>
         </div>
-      </div>`;
+        <span class="text-slate-500 shrink-0">›</span>
+      </button>`;
     }).join("");
+    el.querySelectorAll("[data-view-team-detail]").forEach(btn => btn.addEventListener("click", () => openTeamDetail(Number(btn.dataset.viewTeamDetail))));
+  }
+
+  // ---------- 팀 상세 (관리자: 팀원 명단 + 가능한 시간대) ----------
+  let currentTeamDetailId = null;
+  async function openTeamDetail(teamId){
+    currentTeamDetailId = teamId;
+    const team = data.teams.find(t => t.id === teamId);
+    document.getElementById("teamDetailModalTitle").textContent = team ? `${team.name} 상세` : "팀 상세";
+    document.getElementById("teamDetailModalSubtitle").textContent = "";
+    document.getElementById("teamDetailModalBody").innerHTML = `<p class="text-center text-sm text-slate-500 py-8">불러오는 중...</p>`;
+    document.getElementById("teamDetailModal").classList.remove("hidden");
+    HygoNav.pushModalHistory();
+    await renderTeamDetail(teamId);
+  }
+  function closeTeamDetailModal(){
+    document.getElementById("teamDetailModal").classList.add("hidden");
+    HygoNav.popModalHistoryIfOwn();
+    currentTeamDetailId = null;
+  }
+  async function renderTeamDetail(teamId){
+    const body = document.getElementById("teamDetailModalBody");
+    const team = data.teams.find(t => t.id === teamId);
+    if (!team){ body.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">팀을 찾을 수 없어요.</p>`; return; }
+
+    let users, applications;
+    try {
+      const [usersRes, appsRes] = await Promise.all([
+        apiSend("GET", "/api/hygo/admin/users"),
+        apiSend("GET", "/api/hygo/admin/applications"),
+      ]);
+      users = usersRes.users;
+      applications = appsRes.applications;
+    } catch (e) {
+      body.innerHTML = `<p class="text-center text-sm text-slate-500 py-8">불러오지 못했어요.</p>`;
+      return;
+    }
+    if (currentTeamDetailId !== teamId) return; // 그 사이 다른 팀으로 넘어갔으면 그리지 않는다
+
+    const members = users.filter(u => u.teamId === teamId && u.registered);
+    const appByUserId = new Map(applications.map(a => [a.userId, a]));
+
+    const membersHtml = members.length ? members.map(m => `
+      <div class="flex items-center gap-2.5 bg-black/20 rounded-lg px-3 py-2 border border-white/5">
+        <img src="${m.profileImage || "/icons/icon-192.png"}" class="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0 object-cover">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-white truncate">${escapeHtml(m.name)} <span class="text-slate-500 font-normal">(${escapeHtml(m.nickname)})</span></p>
+          <p class="text-[11px] text-slate-500 truncate">${escapeHtml(m.department || "")}${m.gender ? " · " + escapeHtml(m.gender) : ""}</p>
+        </div>
+        ${appByUserId.has(m.id) ? "" : `<span class="text-[10px] text-amber-400 shrink-0 whitespace-nowrap">신청서 미제출</span>`}
+      </div>`).join("") : `<p class="text-sm text-slate-500 py-3 text-center">아직 팀원이 없어요.</p>`;
+
+    // 가능한 시간대는 신청서를 제출한 팀원들의 availability를 요일×시간대로 겹쳐서 집계한다.
+    const counts = {};
+    APPLICATION_DAYS.forEach(day => { counts[day] = {}; APPLICATION_SLOTS.forEach(slot => { counts[day][slot] = []; }); });
+    let appliedCount = 0;
+    members.forEach(m => {
+      const app = appByUserId.get(m.id);
+      if (!app || !app.availability) return;
+      appliedCount++;
+      APPLICATION_DAYS.forEach(day => {
+        (app.availability[day] || []).forEach(slot => {
+          if (counts[day][slot]) counts[day][slot].push(m.name);
+        });
+      });
+    });
+    const maxCount = Math.max(1, ...APPLICATION_DAYS.flatMap(day => APPLICATION_SLOTS.map(slot => counts[day][slot].length)));
+
+    const gridHtml = appliedCount ? `
+      <div class="overflow-x-auto -mx-1 px-1">
+        <table class="w-full text-center border-separate" style="border-spacing:3px">
+          <thead>
+            <tr>
+              <th class="text-[10px] text-slate-500 font-normal"></th>
+              ${APPLICATION_DAYS.map(day => `<th class="text-[10px] text-slate-400 font-semibold pb-1">${day}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${APPLICATION_SLOTS.map(slot => `
+            <tr>
+              <td class="text-[10px] text-slate-500 whitespace-nowrap pr-1.5 text-right">${slot}</td>
+              ${APPLICATION_DAYS.map(day => {
+                const names = counts[day][slot];
+                const n = names.length;
+                const alpha = n ? Math.min(0.85, 0.18 + (n / maxCount) * 0.67) : 0.06;
+                return `<td title="${escapeHtml(names.join(", "))}" class="rounded-lg text-[11px] font-bold py-2 ${n ? "text-white" : "text-slate-600"}" style="background:rgba(236,72,153,${alpha})">${n || ""}</td>`;
+              }).join("")}
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[10px] text-slate-500 text-center">칸에 마우스를 올리면 가능한 팀원 이름이 보여요 · 진할수록 가능한 인원이 많아요</p>
+    ` : `<p class="text-sm text-slate-500 py-3 text-center">신청서를 제출한 팀원이 없어요.</p>`;
+
+    body.innerHTML = `
+      <div class="space-y-2.5">
+        <h4 class="text-xs font-bold text-slate-400">👥 팀원 (${members.length}명)</h4>
+        <div class="space-y-1.5">${membersHtml}</div>
+      </div>
+      <div class="space-y-2.5">
+        <h4 class="text-xs font-bold text-slate-400">🕒 팀 가능한 시간대${appliedCount ? ` (신청서 제출 ${appliedCount}/${members.length}명 기준)` : ""}</h4>
+        ${gridHtml}
+      </div>`;
   }
 
   async function renderUserManageList(){
@@ -3172,6 +3291,7 @@ window.HygoNav = (function(){
     HygoNav.registerModalCloser("promptModal", () => document.getElementById("promptModalCancel").click());
     HygoNav.registerModalCloser("photoLightbox", closeLightbox);
     HygoNav.registerModalCloser("historyModal", closeHistoryModal);
+    HygoNav.registerModalCloser("teamDetailModal", closeTeamDetailModal);
     HygoNav.registerModalCloser("memberModal", closeMemberModal);
     HygoNav.registerModalCloser("profileModal", closeProfileModal);
 
@@ -3204,6 +3324,9 @@ window.HygoNav = (function(){
 
     document.getElementById("historyModalClose").addEventListener("click", closeHistoryModal);
     document.getElementById("historyModal").addEventListener("click", e => { if (e.target.id === "historyModal") closeHistoryModal(); });
+
+    document.getElementById("teamDetailModalClose").addEventListener("click", closeTeamDetailModal);
+    document.getElementById("teamDetailModal").addEventListener("click", e => { if (e.target.id === "teamDetailModal") closeTeamDetailModal(); });
 
     document.getElementById("photoLightboxClose").addEventListener("click", closeLightbox);
     document.getElementById("photoLightbox").addEventListener("click", e => { if (e.target.id === "photoLightbox") closeLightbox(); });
