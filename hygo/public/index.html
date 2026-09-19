@@ -470,8 +470,29 @@
           <h3 class="text-sm font-bold text-slate-300">🤖 AI 자동배정</h3>
           <span class="text-[11px] text-slate-500"><span id="pendingApplicantCount">0</span>명 대기중</span>
         </div>
-        <p class="text-[11px] text-slate-500">신청서를 제출했지만 아직 조 배정이 안 된 사람들을 알고리즘으로 한 번에 배정해요. (같이 팀 되고 싶은 사람 · 성별(반반)은 반드시 지키고, 그 안에서 가능 시간 → 팀 분위기 → 나이 → 학과(다양하게) → 학번 순으로 우선 배정)</p>
+        <p class="text-[11px] text-slate-500">신청서를 제출했지만 아직 조 배정이 안 된 사람들을 시뮬레이티드 어닐링으로 배정해요. 서로 지목한 사람·고정 그룹은 반드시 같은 팀, 성별은 하드 제약이고 나머지(시간대·성향·학과 등)는 점수를 최대화하는 방향으로 탐색해요.</p>
+
+        <details class="space-y-2">
+          <summary class="text-[11px] font-semibold text-slate-400 cursor-pointer select-none">⚙️ 배정 옵션 (선택 — 제외자 / 고정 그룹 / 분리 조건)</summary>
+          <div class="space-y-2 pt-2">
+            <div>
+              <label class="block text-[10px] text-slate-500 mb-1">제외자 — 한 줄에 한 명 (운영진 등 자동배정에서 빼고 싶은 사람)</label>
+              <textarea id="autoAssignExcluded" rows="2" placeholder="예: 박성철" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-500 mb-1">고정 그룹 — 한 줄에 한 그룹, 이름을 쉼표로 구분 (반드시 같은 팀)</label>
+              <textarea id="autoAssignFixedGroups" rows="2" placeholder="예: 도하정, 옥재원, 김수린" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-500 mb-1">분리 조건 — 한 줄에 이름 두 개를 쉼표로 구분 (같은 팀이면 감점)</label>
+              <textarea id="autoAssignSeparation" rows="2" placeholder="예: 권지인, 강인구" class="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-fuchsia-500"></textarea>
+            </div>
+            <button id="saveAutoAssignConfigBtn" class="w-full py-2 rounded-xl font-semibold text-xs bg-white/10 hover:bg-white/15 text-white transition">옵션 저장</button>
+          </div>
+        </details>
+
         <button id="autoAssignBtn" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">🤖 자동배정 실행</button>
+        <div id="autoAssignResult" class="hidden space-y-1.5 text-[11px]"></div>
         <div class="border-t border-white/10 pt-3 space-y-2">
           <p class="text-[11px] text-slate-500">테스트용 신청자 생성 (알고리즘 동작 확인용)</p>
           <div class="flex gap-2">
@@ -534,6 +555,14 @@
             ⬆️ 백업 복원
             <input id="backupRestoreInput" type="file" accept="application/json" class="hidden">
           </label>
+        </div>
+        <div class="pt-3 border-t border-white/10 space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="text-xs font-semibold text-slate-400">🗓️ 자동 백업 (매일 1회, 행사 기간 전체 보관)</p>
+            <button id="runBackupNowBtn" class="text-[11px] font-bold text-fuchsia-300 hover:text-fuchsia-200 transition">지금 백업</button>
+          </div>
+          <p id="autoBackupStatus" class="text-[11px] text-slate-500"></p>
+          <div id="autoBackupList" class="space-y-1.5"></div>
         </div>
       </div>
 
@@ -1439,11 +1468,14 @@ window.HygoNav = (function(){
   // 미션은 여러 명이 같이 하는데 사진은 한 명만 올리다 보니, 예전엔 "기여 점수"가 내가 직접
   // 올린 인증에만 매겨져서 같이 참여했지만 사진을 안 올린 팀원은 기여가 하나도 안 잡혔다.
   // 이제 인증 제출할 때 참여자를 이름으로 직접 고르게 됐으니, 그 명단을 기준으로 계산한다.
-  function iParticipatedIn(s){
+  function participatedInSubmission(s, userId){
     if (Array.isArray(s.participantList) && s.participantList.length) {
-      return s.participantList.some(p => p.id === currentUser.id);
+      return s.participantList.some(p => p.id === userId);
     }
-    return s.authorId === currentUser.id; // 참여자 명단이 없는 옛날 인증 건은 제출자를 참여자로 간주
+    return s.authorId === userId; // 참여자 명단이 없는 옛날 인증 건은 제출자를 참여자로 간주
+  }
+  function iParticipatedIn(s){
+    return participatedInSubmission(s, currentUser.id);
   }
   function renderMyStats(){
     const grid = document.getElementById("myStatsGrid");
@@ -2525,6 +2557,7 @@ window.HygoNav = (function(){
     renderAutoAssignPanel();
     renderUserManageList();
     populateCampaignInputs();
+    renderAutoBackupList();
   }
 
   function renderEngagementDashboard(){
@@ -2595,15 +2628,23 @@ window.HygoNav = (function(){
     const members = users.filter(u => u.teamId === teamId && u.registered);
     const appByUserId = new Map(applications.map(a => [a.userId, a]));
 
-    const membersHtml = members.length ? members.map(m => `
+    // 팀원별 참여도 — 개인 프로필의 "내 활동 통계"와 같은 기준(제출/참여/기여 점수)을 관리자가
+    // 팀 단위로 한눈에 보도록 그대로 재사용한다.
+    const membersHtml = members.length ? members.map(m => {
+      const mine = data.submissions.filter(s => s.authorId === m.id);
+      const participated = data.submissions.filter(s => s.status === "approved" && participatedInSubmission(s, m.id));
+      const contributed = participated.reduce((sum, s) => sum + (s.awardedPoints || 0), 0);
+      return `
       <div class="flex items-center gap-2.5 bg-black/20 rounded-lg px-3 py-2 border border-white/5">
         <img src="${m.profileImage || "/icons/icon-192.png"}" class="w-8 h-8 rounded-full ring-1 ring-white/10 shrink-0 object-cover">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-white truncate">${escapeHtml(m.name)} <span class="text-slate-500 font-normal">(${escapeHtml(m.nickname)})</span></p>
           <p class="text-[11px] text-slate-500 truncate">${escapeHtml(m.department || "")}${m.gender ? " · " + escapeHtml(m.gender) : ""}</p>
+          <p class="text-[10px] text-fuchsia-300 truncate">제출 ${mine.length} · 참여 미션 ${participated.length} · 기여 ${contributed}점</p>
         </div>
         ${appByUserId.has(m.id) ? "" : `<span class="text-[10px] text-amber-400 shrink-0 whitespace-nowrap">신청서 미제출</span>`}
-      </div>`).join("") : `<p class="text-sm text-slate-500 py-3 text-center">아직 팀원이 없어요.</p>`;
+      </div>`;
+    }).join("") : `<p class="text-sm text-slate-500 py-3 text-center">아직 팀원이 없어요.</p>`;
 
     // 가능한 시간대는 신청서를 제출한 팀원들의 availability를 요일×시간대로 겹쳐서 집계한다.
     const counts = {};
@@ -2649,13 +2690,32 @@ window.HygoNav = (function(){
 
     body.innerHTML = `
       <div class="space-y-2.5">
-        <h4 class="text-xs font-bold text-slate-400">👥 팀원 (${members.length}명)</h4>
+        <div class="flex items-center justify-between gap-2">
+          <h4 class="text-xs font-bold text-slate-400">👥 팀원 (${members.length}명)</h4>
+          <button id="unassignTeamBtn" ${members.length ? "" : "disabled"} class="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition disabled:opacity-30 disabled:cursor-not-allowed">조 전체 미배정</button>
+        </div>
         <div class="space-y-1.5">${membersHtml}</div>
       </div>
       <div class="space-y-2.5">
         <h4 class="text-xs font-bold text-slate-400">🕒 팀 가능한 시간대${appliedCount ? ` (신청서 제출 ${appliedCount}/${members.length}명 기준)` : ""}</h4>
         ${gridHtml}
       </div>`;
+    const unassignBtn = document.getElementById("unassignTeamBtn");
+    if (unassignBtn) unassignBtn.addEventListener("click", () => unassignWholeTeam(teamId));
+  }
+
+  async function unassignWholeTeam(teamId){
+    const team = data.teams.find(t => t.id === teamId);
+    if (!team) return;
+    const ok = await confirmModal(`${team.name}에 배정된 팀원 전체를 미배정 상태로 되돌릴까요? 팀 자체(이름/점수/기록)는 그대로 남고, 팀원들만 다시 배정 대기 상태가 돼요.`, { title: "조 전체 미배정", danger: true, okText: "미배정으로 변경" });
+    if (!ok) return;
+    try {
+      const res = await apiSend("POST", `/api/hygo/teams/${teamId}/unassign-all`, {});
+      toast(`${team.name} 팀원 ${res.count}명을 미배정으로 변경했어요.`);
+      renderTeamDetail(teamId);
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   async function renderUserManageList(){
@@ -2884,10 +2944,11 @@ window.HygoNav = (function(){
   async function approveSubmission(id){
     try {
       const res = await apiSend("POST", `/api/hygo/submissions/${id}/approve`, {});
+      const bonusNote = res.fullTeamBonus ? ` (팀원 전원 참여 보너스 +${res.fullTeamBonus}점 포함)` : "";
       if (res.capApplied){
-        toast(`일일 상한(15점) 적용으로 ${res.awardedPoints}점만 반영됐어요.`);
+        toast(`일일 상한(15점) 적용으로 ${res.awardedPoints}점만 반영됐어요.${bonusNote}`);
       } else {
-        toast(`승인 완료! ${res.teamName}에 ${res.awardedPoints}점을 반영했어요.`);
+        toast(`승인 완료! ${res.teamName}에 ${res.awardedPoints}점을 반영했어요.${bonusNote}`);
       }
     } catch (err) {
       toast(err.message, "error");
@@ -2934,14 +2995,28 @@ window.HygoNav = (function(){
     const el = document.getElementById("teamManageList");
     const sorted = [...data.teams].sort((a, b) => a.id - b.id);
     el.innerHTML = sorted.map(t => `
-      <div class="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2 border border-white/5">
-        <div class="min-w-0">
-          <p class="text-sm font-semibold text-white truncate">${escapeHtml(t.name)}</p>
+      <div class="flex items-center gap-1.5 bg-black/20 rounded-lg px-2.5 py-2 border border-white/5" data-team-row="${t.id}">
+        <div class="min-w-0 flex-1 space-y-1">
+          <input data-field="name" value="${escapeHtml(t.name)}" maxlength="20" class="w-full bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-500">
           <p class="text-[10px] text-slate-500">${t.points}점 · 미션 ${t.missionsCount}개</p>
         </div>
-        <button data-remove-team="${t.id}" ${data.teams.length <= 1 ? "disabled" : ""} class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition disabled:opacity-30 disabled:cursor-not-allowed">삭제</button>
+        <button data-rename-team="${t.id}" class="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/25 transition">저장</button>
+        <button data-remove-team="${t.id}" ${data.teams.length <= 1 ? "disabled" : ""} class="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition disabled:opacity-30 disabled:cursor-not-allowed">삭제</button>
       </div>`).join("");
+    el.querySelectorAll("[data-rename-team]").forEach(btn => btn.addEventListener("click", () => renameTeam(Number(btn.dataset.renameTeam))));
     el.querySelectorAll("[data-remove-team]").forEach(btn => btn.addEventListener("click", () => removeTeam(Number(btn.dataset.removeTeam))));
+  }
+
+  async function renameTeam(id){
+    const row = document.querySelector(`[data-team-row="${id}"]`);
+    const name = row.querySelector("[data-field='name']").value.trim();
+    if (!name){ toast("팀 이름을 입력해주세요.", "error"); return; }
+    try {
+      await apiSend("PUT", `/api/hygo/teams/${id}`, { name });
+      toast(`팀 이름을 "${name}"(으)로 변경했어요.`);
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   async function addTeam(){
@@ -3129,29 +3204,76 @@ window.HygoNav = (function(){
 
   async function renderAutoAssignPanel(){
     try {
-      const [usersRes, appsRes] = await Promise.all([
+      const [usersRes, appsRes, configRes] = await Promise.all([
         apiSend("GET", "/api/hygo/admin/users"),
         apiSend("GET", "/api/hygo/admin/applications"),
+        apiSend("GET", "/api/hygo/admin/auto-assign-config"),
       ]);
       const appUserIds = new Set(appsRes.applications.map(a => a.userId));
       const pending = usersRes.users.filter(u => u.registered && u.teamId == null && appUserIds.has(u.id));
       document.getElementById("pendingApplicantCount").textContent = pending.length;
+
+      // 텍스트영역에 지금 타이핑 중이면(포커스 있으면) 덮어쓰지 않는다 — 저장 직후 다른 admin
+      // 갱신 때문에 입력 중이던 내용이 날아가지 않도록.
+      const cfg = configRes.config || { excludedNames: [], fixedGroups: [], separationPairs: [] };
+      const excludedEl = document.getElementById("autoAssignExcluded");
+      const groupsEl = document.getElementById("autoAssignFixedGroups");
+      const sepEl = document.getElementById("autoAssignSeparation");
+      if (document.activeElement !== excludedEl) excludedEl.value = (cfg.excludedNames || []).join("\n");
+      if (document.activeElement !== groupsEl) groupsEl.value = (cfg.fixedGroups || []).map(g => g.join(", ")).join("\n");
+      if (document.activeElement !== sepEl) sepEl.value = (cfg.separationPairs || []).map(p => p.join(", ")).join("\n");
     } catch (e) {
       document.getElementById("pendingApplicantCount").textContent = "?";
+    }
+  }
+
+  function parseLines(text){
+    return text.split("\n").map(s => s.trim()).filter(Boolean);
+  }
+  async function saveAutoAssignConfig(){
+    const excludedNames = parseLines(document.getElementById("autoAssignExcluded").value);
+    const fixedGroups = parseLines(document.getElementById("autoAssignFixedGroups").value).map(line => line.split(",").map(s => s.trim()).filter(Boolean));
+    const separationPairs = parseLines(document.getElementById("autoAssignSeparation").value).map(line => line.split(",").map(s => s.trim()).filter(Boolean));
+    try {
+      await apiSend("POST", "/api/hygo/admin/auto-assign-config", { excludedNames, fixedGroups, separationPairs });
+      toast("배정 옵션을 저장했어요.");
+    } catch (err) {
+      toast(err.message, "error");
     }
   }
 
   async function runAutoAssign(){
     const ok = await confirmModal("신청서를 제출했지만 아직 배정 안 된 모든 사람을 알고리즘으로 팀에 배정할까요? 배정 후에도 회원 관리에서 개별적으로 다시 조정할 수 있어요.", { title: "AI 자동배정 실행", okText: "실행" });
     if (!ok) return;
+    const btn = document.getElementById("autoAssignBtn");
+    btn.disabled = true;
+    btn.textContent = "배정 계산 중...";
     try {
       const res = await apiSend("POST", "/api/hygo/admin/auto-assign", {});
-      toast(res.assignedCount ? `${res.assignedCount}명을 자동배정했어요!` : "배정할 대기 신청자가 없어요.");
+      toast(res.assignedCount ? `${res.assignedCount}명을 자동배정했어요! (점수 ${res.score ?? "-"})` : "배정할 대기 신청자가 없어요.");
+      renderAutoAssignResult(res);
       renderAutoAssignPanel();
       renderUserManageList();
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🤖 자동배정 실행";
     }
+  }
+
+  function renderAutoAssignResult(res){
+    const box = document.getElementById("autoAssignResult");
+    if (!res || (!res.diagnostics && !res.warnings)){ box.classList.add("hidden"); box.innerHTML = ""; return; }
+    const warningsHtml = (res.warnings && res.warnings.length)
+      ? `<p class="text-amber-400">⚠️ ${res.warnings.map(escapeHtml).join(" · ")}</p>` : "";
+    const rowsHtml = (res.diagnostics || []).map(d => {
+      const deptText = Object.entries(d.departments || {}).map(([k, v]) => `${k}${v}`).join(" ");
+      const violation = d.separationViolations ? `<span class="text-rose-400 font-bold"> · 분리조건 위반 ${d.separationViolations}건</span>` : "";
+      return `<p class="text-slate-400">${escapeHtml(d.teamName)}: ${d.size}명(남${d.male}/여${d.female}) · 주말 토${d.weekendSat}/일${d.weekendSun} · 활동엔진 ${d.activeEngines}명 · ${escapeHtml(deptText)}${violation}</p>`;
+    }).join("");
+    box.innerHTML = warningsHtml + rowsHtml;
+    box.classList.remove("hidden");
   }
 
   async function generateTestBots(){
@@ -3218,15 +3340,7 @@ window.HygoNav = (function(){
   async function downloadBackup(){
     try {
       const exported = await apiSend("GET", "/api/hygo/export");
-      const blob = new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `hygo-backup-${dateKey(new Date())}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadJsonBlob(exported, `hygo-backup-${dateKey(new Date())}.json`);
       toast("백업 파일을 다운로드했어요.");
     } catch (err) {
       toast(err.message, "error");
@@ -3247,6 +3361,79 @@ window.HygoNav = (function(){
       toast(err.message || "백업 파일을 읽는 데 실패했어요.", "error");
     } finally {
       e.target.value = "";
+    }
+  }
+
+  // ---------- 자동 백업 (매일 1회, 서버가 알아서 저장) ----------
+  function downloadJsonBlob(obj, filename){
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+  async function renderAutoBackupList(){
+    const status = document.getElementById("autoBackupStatus");
+    const list = document.getElementById("autoBackupList");
+    try {
+      const res = await apiSend("GET", "/api/hygo/admin/backups");
+      status.textContent = res.lastBackupAt ? `마지막 백업 시도: ${fmtDate(res.lastBackupAt)}` : "아직 자동 백업이 실행되지 않았어요.";
+      if (!res.backups.length){
+        list.innerHTML = `<p class="text-[11px] text-slate-500 py-2 text-center">저장된 자동 백업이 없어요.</p>`;
+        return;
+      }
+      list.innerHTML = res.backups.map(b => `
+        <div class="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2 border border-white/5 gap-2">
+          <span class="text-xs font-semibold ${b.ok ? "text-slate-300" : "text-rose-400"}">${b.date}${b.ok ? "" : " (실패)"}</span>
+          <div class="flex gap-1.5 shrink-0">
+            <button data-dl-backup="${b.date}" ${b.ok ? "" : "disabled"} class="text-[11px] font-bold px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white transition disabled:opacity-30">다운로드</button>
+            <button data-restore-backup="${b.date}" ${b.ok ? "" : "disabled"} class="text-[11px] font-bold px-2 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition disabled:opacity-30">복원</button>
+          </div>
+        </div>`).join("");
+      list.querySelectorAll("[data-dl-backup]").forEach(btn => btn.addEventListener("click", () => downloadAutoBackup(btn.dataset.dlBackup)));
+      list.querySelectorAll("[data-restore-backup]").forEach(btn => btn.addEventListener("click", () => restoreAutoBackup(btn.dataset.restoreBackup)));
+    } catch (err) {
+      status.textContent = "";
+      list.innerHTML = `<p class="text-[11px] text-rose-400 py-2 text-center">목록을 불러오지 못했어요.</p>`;
+    }
+  }
+  async function downloadAutoBackup(date){
+    try {
+      const snapshot = await apiSend("GET", `/api/hygo/admin/backups/${date}`);
+      downloadJsonBlob(snapshot, `hygo-auto-backup-${date}.json`);
+      toast(`${date} 백업을 다운로드했어요.`);
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  async function restoreAutoBackup(date){
+    const ok = await confirmModal(`${date}에 저장된 자동 백업으로 현재 데이터를 완전히 덮어쓸까요? 되돌릴 수 없어요.`, { title: "자동 백업 복원", danger: true, okText: "복원" });
+    if (!ok) return;
+    try {
+      const snapshot = await apiSend("GET", `/api/hygo/admin/backups/${date}`);
+      await apiSend("POST", "/api/hygo/import", snapshot);
+      toast(`${date} 백업으로 복원했어요.`);
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  async function runBackupNow(){
+    const btn = document.getElementById("runBackupNowBtn");
+    btn.disabled = true;
+    btn.textContent = "백업 중...";
+    try {
+      await apiSend("POST", "/api/hygo/admin/backups/run", {});
+      toast("지금 백업을 저장했어요.");
+      renderAutoBackupList();
+    } catch (err) {
+      toast(err.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "지금 백업";
     }
   }
 
@@ -3347,6 +3534,7 @@ window.HygoNav = (function(){
     document.getElementById("addMissionBtn").addEventListener("click", addMission);
     document.getElementById("addActivityBtn").addEventListener("click", addActivity);
     document.getElementById("autoAssignBtn").addEventListener("click", runAutoAssign);
+    document.getElementById("saveAutoAssignConfigBtn").addEventListener("click", saveAutoAssignConfig);
     document.getElementById("applicationDeadlineApplyBtn").addEventListener("click", applyApplicationDeadline);
     document.getElementById("applicationDeadlineClearBtn").addEventListener("click", clearApplicationDeadline);
     document.getElementById("testBotBtn").addEventListener("click", generateTestBots);
@@ -3357,6 +3545,7 @@ window.HygoNav = (function(){
     document.getElementById("campaignApplyBtn").addEventListener("click", applyCampaign);
     document.getElementById("backupDownloadBtn").addEventListener("click", downloadBackup);
     document.getElementById("backupRestoreInput").addEventListener("change", handleBackupRestore);
+    document.getElementById("runBackupNowBtn").addEventListener("click", runBackupNow);
     document.getElementById("resetZeroBtn").addEventListener("click", resetToZero);
     document.getElementById("resetSampleBtn").addEventListener("click", resetSampleData);
 
