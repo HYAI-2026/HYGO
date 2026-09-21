@@ -226,10 +226,19 @@ async function runDailyBackupIfDue(force) {
 // 디스코드/슬랙 호환 인커밍 웹훅으로 알림을 보낸다. 실패해도 요청 흐름에는 영향을 주지 않는다.
 function notifyWebhook(message) {
     if (!WEBHOOK_URL) return;
+    // fetch()는 DNS 실패·연결 거부 같은 "네트워크" 단계 오류에만 reject된다. 디스코드가 요청을
+    // 정상적으로 받고서 400/401/404 같은 에러 응답을 줘도 fetch 자체는 성공(resolve)한 걸로
+    // 처리되기 때문에, res.ok를 따로 확인 안 하면 이런 실패가 로그에 전혀 안 남고 완전히
+    // 조용히 무시된다 — 실제로 이것 때문에 알림이 안 오는데도 로그에 아무 단서가 없었다.
     fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: message, text: message }),
+    }).then(async res => {
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            console.warn("[hygo] webhook notify rejected:", res.status, body);
+        }
     }).catch(err => console.warn("[hygo] webhook notify failed:", err.message));
 }
 
