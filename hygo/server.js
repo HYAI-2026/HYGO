@@ -403,6 +403,7 @@ function normalizeCampaign(parsed) {
             if (!s.reactions || typeof s.reactions !== "object") s.reactions = emptyReactions();
             REACTION_TYPES.forEach(key => { if (typeof s.reactions[key] !== "number") s.reactions[key] = 0; });
             if (!Array.isArray(s.participantList)) s.participantList = [];
+            if (s.photoType !== "pdf") s.photoType = "image";
         });
     }
     return parsed;
@@ -829,15 +830,23 @@ app.post("/api/hygo/submissions", requireLogin, async (req, res) => {
         return { id: u.id, name: u.name };
     });
     if (!memo || !String(memo).trim()) return res.status(400).json({ error: "한 줄 메모를 입력해주세요." });
-    if (!photo || !String(photo).startsWith("data:image/")) {
-        return res.status(400).json({ error: "인증 사진을 업로드해주세요." });
+    const photoStr = photo ? String(photo) : "";
+    const isPdfPhoto = photoStr.startsWith("data:application/pdf");
+    if (!photoStr || !(photoStr.startsWith("data:image/") || isPdfPhoto)) {
+        return res.status(400).json({ error: "인증 사진 또는 PDF 파일을 업로드해주세요." });
+    }
+    // Upstash 무료 티어의 요청당 최대 크기(10MB)를 넘지 않도록 base64 데이터 URI 길이 자체를 제한한다.
+    // 이미지는 클라이언트에서 이미 압축해서 보내지만 PDF는 압축할 수 없어서 여기서 걸러야 한다.
+    if (photoStr.length > 9 * 1024 * 1024) {
+        return res.status(400).json({ error: "파일 용량이 너무 커요. 8MB 이하로 업로드해주세요." });
     }
 
     const id = uid();
     const sub = {
         id, teamId: team.id, missionKey: mission.key, category: mission.category,
         label: mission.label, emoji: mission.emoji, participants: participantList.length, participantList,
-        memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, status: "pending", createdAt: new Date().toISOString(),
+        memo: String(memo).trim(), photo: `/api/hygo/photo/${id}`, photoType: isPdfPhoto ? "pdf" : "image",
+        status: "pending", createdAt: new Date().toISOString(),
         authorId: user.id, comments: [], reactions: emptyReactions(), reactedBy: {},
     };
 

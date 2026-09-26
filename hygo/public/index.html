@@ -251,12 +251,16 @@
       </div>
 
       <div>
-        <label class="block text-xs font-semibold text-slate-400 mb-1.5">인증 사진</label>
-        <input id="photoInput" type="file" accept="image/*" required class="w-full text-xs text-slate-400 bg-black/30 border border-white/10 rounded-xl px-2 py-2">
+        <label class="block text-xs font-semibold text-slate-400 mb-1.5">인증 사진 (PDF도 가능)</label>
+        <input id="photoInput" type="file" accept="image/*,application/pdf" required class="w-full text-xs text-slate-400 bg-black/30 border border-white/10 rounded-xl px-2 py-2">
         <div id="photoPreviewWrap" class="hidden mt-3">
           <img id="photoPreview" class="w-full max-h-64 object-cover rounded-xl border border-white/10">
+          <div id="pdfPreview" class="hidden flex items-center gap-2.5 bg-black/30 border border-white/10 rounded-xl px-3 py-3">
+            <span class="text-2xl">📄</span>
+            <span id="pdfPreviewName" class="text-xs text-slate-300 truncate"></span>
+          </div>
         </div>
-        <p id="photoStatus" class="hidden text-[11px] text-fuchsia-300 mt-1.5">이미지 처리 중...</p>
+        <p id="photoStatus" class="hidden text-[11px] text-fuchsia-300 mt-1.5">파일 처리 중...</p>
       </div>
 
       <button type="submit" id="submitBtn" class="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 via-fuchsia-500 to-orange-400 hover:opacity-90 transition shadow-glow">
@@ -1666,7 +1670,7 @@ window.HygoNav = (function(){
     wrap.classList.remove("hidden");
     list.innerHTML = mine.map(s => `
       <div class="glass rounded-2xl p-3.5 flex gap-3 items-center">
-        <img src="${s.photo}" data-lightbox="${s.id}" class="w-16 h-16 rounded-xl object-cover border border-white/10 shrink-0 cursor-zoom-in hover:opacity-90 transition">
+        ${photoThumbHTML(s, "w-16 h-16 rounded-xl border border-white/10 shrink-0")}
         <div class="flex-1 min-w-0">
           <p class="text-sm font-semibold text-white truncate">${s.emoji} ${escapeHtml(s.label)}</p>
           <p class="text-[11px] text-slate-500 truncate">${escapeHtml(s.memo || "")}</p>
@@ -1674,7 +1678,7 @@ window.HygoNav = (function(){
         </div>
         <button data-cancel-pending="${s.id}" class="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-400/30 hover:bg-rose-500/25 transition">취소</button>
       </div>`).join("");
-    list.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
+    wireLightboxThumbs(list);
     list.querySelectorAll("[data-cancel-pending]").forEach(btn => btn.addEventListener("click", () => cancelPendingSubmission(btn.dataset.cancelPending)));
   }
 
@@ -1964,7 +1968,7 @@ window.HygoNav = (function(){
       html += `<div class="space-y-2.5">` +
         missions.map(s => `
         <div class="flex gap-3 items-start bg-black/20 rounded-xl p-2.5 border border-white/5">
-          <img src="${s.photo}" data-lightbox="${s.id}" class="w-14 h-14 rounded-lg object-cover shrink-0 border border-white/10 cursor-zoom-in hover:opacity-90 transition">
+          ${photoThumbHTML(s, "w-14 h-14 rounded-lg shrink-0 border border-white/10")}
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
               <p class="text-sm font-semibold text-white truncate">${s.emoji} ${escapeHtml(s.label)}</p>
@@ -2001,7 +2005,7 @@ window.HygoNav = (function(){
     panel.querySelectorAll("[data-dismiss-rejection]").forEach(btn => {
       btn.addEventListener("click", () => dismissRejection(btn.dataset.dismissRejection));
     });
-    panel.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
+    wireLightboxThumbs(panel);
   }
 
   async function dismissRejection(id){
@@ -2134,21 +2138,49 @@ window.HygoNav = (function(){
     });
   }
 
+  const MAX_PDF_BYTES = 6 * 1024 * 1024; // base64로 변환하면 ~8MB, 서버 쪽 9MB 제한에 여유를 둔다
+  function readPdfAsDataUrl(file){
+    return new Promise((resolve, reject) => {
+      if (file.type !== "application/pdf") { reject(new Error("PDF 파일만 업로드할 수 있어요.")); return; }
+      if (file.size > MAX_PDF_BYTES) { reject(new Error(`PDF 파일은 ${Math.floor(MAX_PDF_BYTES / 1024 / 1024)}MB 이하만 업로드할 수 있어요.`)); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("파일을 읽을 수 없어요."));
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function handlePhotoChange(e){
     const file = e.target.files[0];
     const wrap = document.getElementById("photoPreviewWrap");
     const status = document.getElementById("photoStatus");
     const img = document.getElementById("photoPreview");
+    const pdfPreview = document.getElementById("pdfPreview");
     currentPhotoDataUrl = null;
-    if (!file){ wrap.classList.add("hidden"); img.src = ""; status.classList.add("hidden"); return; }
+    if (!file){
+      wrap.classList.add("hidden");
+      img.src = ""; img.classList.remove("hidden");
+      pdfPreview.classList.add("hidden");
+      status.classList.add("hidden");
+      return;
+    }
 
+    const isPdf = file.type === "application/pdf";
     photoProcessing = true;
     status.classList.remove("hidden");
     wrap.classList.add("hidden");
     try {
-      const dataUrl = await compressImage(file);
+      const dataUrl = isPdf ? await readPdfAsDataUrl(file) : await compressImage(file);
       currentPhotoDataUrl = dataUrl;
-      img.src = dataUrl;
+      if (isPdf){
+        img.classList.add("hidden"); img.src = "";
+        document.getElementById("pdfPreviewName").textContent = file.name;
+        pdfPreview.classList.remove("hidden");
+      } else {
+        pdfPreview.classList.add("hidden");
+        img.classList.remove("hidden");
+        img.src = dataUrl;
+      }
       wrap.classList.remove("hidden");
     } catch (err) {
       toast(err.message, "error");
@@ -2208,6 +2240,21 @@ window.HygoNav = (function(){
   // ---------- feed ----------
   function sanitizeFilename(s){
     return String(s).replace(/[\\/:*?"<>|]/g, "_");
+  }
+  // 인증 파일이 PDF일 수도 있어서, 서버가 내려주는 /api/hygo/photo/:id URL만으로는 이미지인지
+  // PDF인지 클라이언트가 판단할 수 없다 — 제출 시 함께 저장해둔 photoType으로 구분한다.
+  function photoThumbHTML(s, baseClasses){
+    if (s.photoType === "pdf") {
+      return `<div data-lightbox="${s.id}" data-photo-src="${s.photo}" data-pdf="1" class="${baseClasses} bg-black/30 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-black/40 transition">
+        <span class="text-2xl">📄</span><span class="text-[10px] font-bold text-slate-400">PDF</span>
+      </div>`;
+    }
+    return `<img src="${s.photo}" data-lightbox="${s.id}" data-photo-src="${s.photo}" class="${baseClasses} object-cover cursor-zoom-in hover:opacity-90 transition">`;
+  }
+  function wireLightboxThumbs(root){
+    root.querySelectorAll("[data-lightbox]").forEach(el => {
+      el.addEventListener("click", () => openLightbox(el.dataset.photoSrc, el.dataset.pdf === "1"));
+    });
   }
   function downloadPhoto(dataUrl, filename){
     const a = document.createElement("a");
@@ -2426,11 +2473,12 @@ window.HygoNav = (function(){
 
     el.innerHTML = approved.map(s => {
       const team = data.teams.find(t => t.id === s.teamId);
-      const filename = sanitizeFilename(`${team ? team.name : "team"}_${s.label}_${dateKey(new Date(s.approvedAt || s.createdAt))}.jpg`);
+      const ext = s.photoType === "pdf" ? "pdf" : "jpg";
+      const filename = sanitizeFilename(`${team ? team.name : "team"}_${s.label}_${dateKey(new Date(s.approvedAt || s.createdAt))}.${ext}`);
       return `
       <div class="glass rounded-2xl overflow-hidden animate-fadeIn">
         <div class="relative">
-          <img src="${s.photo}" data-lightbox="${s.id}" class="w-full h-48 object-cover cursor-zoom-in hover:opacity-90 transition">
+          ${photoThumbHTML(s, "w-full h-48")}
           ${isAdmin ? `
           <div class="absolute top-2 right-2 flex gap-1.5">
             <button data-download="${s.id}" data-filename="${filename}" title="사진 다운로드" class="w-8 h-8 rounded-lg bg-black/60 backdrop-blur text-white flex items-center justify-center hover:bg-black/80 transition">⬇️</button>
@@ -2458,7 +2506,7 @@ window.HygoNav = (function(){
       }));
       el.querySelectorAll("[data-delete-feed]").forEach(btn => btn.addEventListener("click", () => deleteFeedItem(btn.dataset.deleteFeed)));
     }
-    el.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
+    wireLightboxThumbs(el);
     el.querySelectorAll("[data-reaction-summary]").forEach(btn => btn.addEventListener("click", e => {
       e.stopPropagation();
       toggleReactionPicker(btn.dataset.reactionSummary, btn);
@@ -2473,7 +2521,8 @@ window.HygoNav = (function(){
     el.querySelectorAll("[data-report-comment]").forEach(btn => btn.addEventListener("click", () => reportComment(btn.dataset.reportComment)));
   }
 
-  function openLightbox(src){
+  function openLightbox(src, isPdf){
+    if (isPdf){ window.open(src, "_blank", "noopener"); return; }
     const img = document.getElementById("photoLightboxImg");
     img.src = src;
     document.getElementById("photoLightbox").classList.remove("hidden");
@@ -3089,7 +3138,7 @@ window.HygoNav = (function(){
       const pts = s.proposedPoints !== undefined ? s.proposedPoints : missionByKey(s.missionKey).points;
       return `
       <div class="glass rounded-2xl p-3.5 flex flex-col sm:flex-row gap-3.5">
-        <img src="${s.photo}" data-lightbox="${s.id}" class="w-full sm:w-28 h-40 sm:h-28 object-cover rounded-xl border border-white/10 shrink-0 cursor-zoom-in hover:opacity-90 transition">
+        ${photoThumbHTML(s, "w-full sm:w-28 h-40 sm:h-28 rounded-xl border border-white/10 shrink-0")}
         <div class="flex-1 min-w-0 space-y-1">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">${escapeHtml(team ? team.name : "?")}</span>
@@ -3108,7 +3157,7 @@ window.HygoNav = (function(){
 
     el.querySelectorAll("[data-approve]").forEach(btn => btn.addEventListener("click", () => approveSubmission(btn.dataset.approve)));
     el.querySelectorAll("[data-reject]").forEach(btn => btn.addEventListener("click", () => rejectSubmission(btn.dataset.reject)));
-    el.querySelectorAll("[data-lightbox]").forEach(img => img.addEventListener("click", () => openLightbox(img.src)));
+    wireLightboxThumbs(el);
   }
 
   async function approveSubmission(id){
