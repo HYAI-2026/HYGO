@@ -2475,9 +2475,6 @@ window.HygoNav = (function(){
 
   function openLightbox(src){
     const img = document.getElementById("photoLightboxImg");
-    img.style.transition = "";
-    img.style.transform = "";
-    img.style.transformOrigin = "";
     img.src = src;
     document.getElementById("photoLightbox").classList.remove("hidden");
     HygoNav.pushModalHistory();
@@ -2488,76 +2485,173 @@ window.HygoNav = (function(){
     img.classList.add("animate-fadeIn");
     clearTimeout(img._fadeInTimer);
     img._fadeInTimer = setTimeout(() => img.classList.remove("animate-fadeIn"), 400);
+    lightboxZoom.reset();
   }
   function closeLightbox(){
     document.getElementById("photoLightbox").classList.add("hidden");
     document.getElementById("photoLightboxImg").src = "";
     HygoNav.popModalHistoryIfOwn();
+    lightboxZoom.reset();
   }
 
-  // 라이트박스 확대: 모바일은 두 손가락 핀치(떼면 원래 크기로 복귀), 데스크톱은 마우스 휠.
+  // 라이트박스 확대: 인스타그램 스타일.
+  // - 모바일: 핀치로 확대(손 떼도 배율 유지), 확대된 상태에서 한 손가락 드래그로 이동, 더블탭으로 토글.
+  // - 데스크톱: 휠로 확대/축소(유지), 확대된 상태에서 드래그로 이동, 더블클릭으로 토글.
   // 컨테이너(backdrop) 전체에 리스너를 달아야 한다 — 손가락 하나가 사진 바깥(여백)에 닿으면
   // img에만 걸린 touch-action:none은 적용되지 않아서 브라우저 기본 핀치줌이 먼저 가로채 버린다.
-  (function initLightboxZoom(){
+  const lightboxZoom = (function initLightboxZoom(){
     const container = document.getElementById("photoLightbox");
     const img = document.getElementById("photoLightboxImg");
     container.style.touchAction = "none";
+    img.setAttribute("draggable", "false");
+    img.style.transformOrigin = "0 0"; // translate/scale 좌표 계산이 전부 좌상단 기준이라 origin도 고정해야 한다
+
+    const MIN_SCALE = 1;
     const MAX_SCALE = 4;
-    let scale = 1;
-    let pinchStartDist = 0;
+    const DOUBLE_TAP_SCALE = 2.5;
+    let scale = 1, tx = 0, ty = 0;
+    let baseRect = null; // scale=1,이동없음일 때의 렌더링 위치/크기 (첫 제스처 때 지연 계산 후 캐시)
+    let pinch = null;    // 2손가락 핀치 제스처 상태
+    let pan = null;      // 1손가락(또는 마우스) 드래그 상태
+    let lastTap = null;  // 더블탭 감지용
 
-    const dist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-    function setOrigin(clientX, clientY){
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const mid = (a, b) => ({ x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 });
+
+    function getBaseRect(){
+      if (!baseRect){
+        const prevTransform = img.style.transform;
+        img.style.transform = "";
+        baseRect = img.getBoundingClientRect();
+        img.style.transform = prevTransform;
+      }
+      return baseRect;
+    }
+
+    function applyTransform(){
+      img.style.transform = (scale === 1 && tx === 0 && ty === 0) ? "" : `translate(${tx}px, ${ty}px) scale(${scale})`;
+      container.style.cursor = scale > 1 ? "grab" : "";
+    }
+
+    function clampPan(){
+      const rect = getBaseRect();
+      const viewW = window.innerWidth, viewH = window.innerHeight;
+      const w = rect.width * scale, h = rect.height * scale;
+      let left = rect.left + tx, top = rect.top + ty;
+      left = w <= viewW ? (viewW - w) / 2 : clamp(left, viewW - w, 0);
+      top = h <= viewH ? (viewH - h) / 2 : clamp(top, viewH - h, 0);
+      tx = left - rect.left;
+      ty = top - rect.top;
+    }
+
+    function zoomTo(newScale, clientX, clientY, animate){
+      newScale = clamp(newScale, MIN_SCALE, MAX_SCALE);
       const rect = img.getBoundingClientRect();
-      const ox = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100));
-      const oy = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100));
-      img.style.transformOrigin = `${ox}% ${oy}%`;
-    }
-    function applyScale(){
-      img.style.transform = scale === 1 ? "" : `scale(${scale})`;
-    }
-    function resetZoom(){
-      if (scale === 1) return;
-      scale = 1;
-      img.style.transition = "transform 0.2s ease-out";
-      applyScale();
-      setTimeout(() => { img.style.transition = ""; }, 200);
+      if (clientX !== undefined){
+        const ratio = newScale / scale;
+        tx += (clientX - rect.left) * (1 - ratio);
+        ty += (clientY - rect.top) * (1 - ratio);
+      }
+      scale = newScale;
+      if (scale === 1){ tx = 0; ty = 0; }
+      clampPan();
+      img.style.transition = animate ? "transform 0.2s ease-out" : "";
+      applyTransform();
+      if (animate) setTimeout(() => { img.style.transition = ""; }, 200);
     }
 
+    function reset(){
+      scale = 1; tx = 0; ty = 0; baseRect = null; pinch = null; pan = null; lastTap = null;
+      img.style.transition = "";
+      applyTransform();
+    }
+
+    // ---- 터치: 핀치 확대 + 1손가락 이동 + 더블탭 ----
     container.addEventListener("touchstart", e => {
       if (e.touches.length === 2){
-        pinchStartDist = dist(e.touches[0], e.touches[1]);
-        setOrigin((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+        pan = null;
+        pinch = {
+          startScale: scale, startTx: tx, startTy: ty,
+          startDist: dist(e.touches[0], e.touches[1]),
+          startMid: mid(e.touches[0], e.touches[1]),
+          rect0: img.getBoundingClientRect(),
+        };
         img.style.transition = "";
+      } else if (e.touches.length === 1){
+        pinch = null;
+        const t = e.touches[0];
+        const now = Date.now();
+        if (lastTap && now - lastTap.time < 300 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 30){
+          zoomTo(scale > 1 ? 1 : DOUBLE_TAP_SCALE, t.clientX, t.clientY, true);
+          lastTap = null;
+          pan = null;
+        } else {
+          lastTap = { time: now, x: t.clientX, y: t.clientY };
+          pan = scale > 1 ? { startX: t.clientX, startY: t.clientY, startTx: tx, startTy: ty } : null;
+        }
       }
     }, { passive: true });
 
     container.addEventListener("touchmove", e => {
-      if (e.touches.length === 2 && pinchStartDist > 0){
+      if (e.touches.length === 2 && pinch){
         e.preventDefault();
         const d = dist(e.touches[0], e.touches[1]);
-        scale = Math.min(MAX_SCALE, Math.max(1, d / pinchStartDist));
-        applyScale();
+        const m = mid(e.touches[0], e.touches[1]);
+        const newScale = clamp(pinch.startScale * (d / pinch.startDist), MIN_SCALE, MAX_SCALE);
+        const localX = (pinch.startMid.x - pinch.rect0.left) / pinch.startScale;
+        const localY = (pinch.startMid.y - pinch.rect0.top) / pinch.startScale;
+        const staticLeft = pinch.rect0.left - pinch.startTx;
+        const staticTop = pinch.rect0.top - pinch.startTy;
+        tx = m.x - staticLeft - localX * newScale;
+        ty = m.y - staticTop - localY * newScale;
+        scale = newScale;
+        clampPan();
+        applyTransform();
+      } else if (e.touches.length === 1 && pan){
+        e.preventDefault();
+        const t = e.touches[0];
+        tx = pan.startTx + (t.clientX - pan.startX);
+        ty = pan.startTy + (t.clientY - pan.startY);
+        clampPan();
+        applyTransform();
       }
     }, { passive: false });
 
     ["touchend", "touchcancel"].forEach(evt => container.addEventListener(evt, e => {
-      if (e.touches.length < 2){
-        pinchStartDist = 0;
-        resetZoom();
-      }
+      if (e.touches.length < 2) pinch = null;
+      if (e.touches.length < 1) pan = null;
     }));
 
+    // ---- 데스크톱: 휠 확대/축소, 더블클릭 토글, 드래그 이동 ----
     container.addEventListener("wheel", e => {
       if (container.classList.contains("hidden")) return;
       e.preventDefault();
-      setOrigin(e.clientX, e.clientY);
-      scale = Math.min(MAX_SCALE, Math.max(1, scale - e.deltaY * 0.01));
-      img.style.transition = "";
-      applyScale();
+      zoomTo(scale - e.deltaY * 0.01, e.clientX, e.clientY);
     }, { passive: false });
 
-    container.addEventListener("mouseleave", resetZoom);
+    img.addEventListener("dblclick", e => {
+      zoomTo(scale > 1 ? 1 : DOUBLE_TAP_SCALE, e.clientX, e.clientY, true);
+    });
+
+    img.addEventListener("mousedown", e => {
+      if (scale <= 1) return;
+      e.preventDefault();
+      pan = { startX: e.clientX, startY: e.clientY, startTx: tx, startTy: ty };
+      container.style.cursor = "grabbing";
+    });
+    window.addEventListener("mousemove", e => {
+      if (!pan) return;
+      tx = pan.startTx + (e.clientX - pan.startX);
+      ty = pan.startTy + (e.clientY - pan.startY);
+      clampPan();
+      applyTransform();
+    });
+    window.addEventListener("mouseup", () => {
+      if (pan){ pan = null; applyTransform(); }
+    });
+
+    return { reset };
   })();
 
   // ---------- admin ----------
