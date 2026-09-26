@@ -2481,6 +2481,13 @@ window.HygoNav = (function(){
     img.src = src;
     document.getElementById("photoLightbox").classList.remove("hidden");
     HygoNav.pushModalHistory();
+    // animate-fadeIn(translateY) 애니메이션이 fill-mode 때문에 끝난 뒤에도 transform을 붙들고
+    // 있어서 확대(scale) transform을 덮어써버린다. 페이드인이 끝나면 클래스를 떼서 풀어준다.
+    img.classList.remove("animate-fadeIn");
+    void img.offsetWidth;
+    img.classList.add("animate-fadeIn");
+    clearTimeout(img._fadeInTimer);
+    img._fadeInTimer = setTimeout(() => img.classList.remove("animate-fadeIn"), 400);
   }
   function closeLightbox(){
     document.getElementById("photoLightbox").classList.add("hidden");
