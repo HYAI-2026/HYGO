@@ -607,7 +607,7 @@
 
 <!-- Photo Lightbox -->
 <div id="photoLightbox" class="hidden fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out">
-  <img id="photoLightboxImg" class="max-w-full max-h-full rounded-lg object-contain animate-fadeIn" src="">
+  <img id="photoLightboxImg" class="max-w-full max-h-full rounded-lg object-contain animate-fadeIn" style="touch-action:none;" src="">
   <button id="photoLightboxClose" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 text-white text-2xl leading-none flex items-center justify-center hover:bg-black/80 transition">&times;</button>
 </div>
 
@@ -2474,7 +2474,11 @@ window.HygoNav = (function(){
   }
 
   function openLightbox(src){
-    document.getElementById("photoLightboxImg").src = src;
+    const img = document.getElementById("photoLightboxImg");
+    img.style.transition = "";
+    img.style.transform = "";
+    img.style.transformOrigin = "";
+    img.src = src;
     document.getElementById("photoLightbox").classList.remove("hidden");
     HygoNav.pushModalHistory();
   }
@@ -2483,6 +2487,67 @@ window.HygoNav = (function(){
     document.getElementById("photoLightboxImg").src = "";
     HygoNav.popModalHistoryIfOwn();
   }
+
+  // 라이트박스 확대: 모바일은 두 손가락 핀치(떼면 원래 크기로 복귀), 데스크톱은 마우스 휠.
+  (function initLightboxZoom(){
+    const img = document.getElementById("photoLightboxImg");
+    const MAX_SCALE = 4;
+    let scale = 1;
+    let pinchStartDist = 0;
+
+    const dist = (t0, t1) => Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+    function setOrigin(clientX, clientY){
+      const rect = img.getBoundingClientRect();
+      const ox = ((clientX - rect.left) / rect.width) * 100;
+      const oy = ((clientY - rect.top) / rect.height) * 100;
+      img.style.transformOrigin = `${ox}% ${oy}%`;
+    }
+    function applyScale(){
+      img.style.transform = scale === 1 ? "" : `scale(${scale})`;
+    }
+    function resetZoom(){
+      if (scale === 1) return;
+      scale = 1;
+      img.style.transition = "transform 0.2s ease-out";
+      applyScale();
+      setTimeout(() => { img.style.transition = ""; }, 200);
+    }
+
+    img.addEventListener("touchstart", e => {
+      if (e.touches.length === 2){
+        pinchStartDist = dist(e.touches[0], e.touches[1]);
+        setOrigin((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+        img.style.transition = "";
+      }
+    }, { passive: true });
+
+    img.addEventListener("touchmove", e => {
+      if (e.touches.length === 2 && pinchStartDist > 0){
+        e.preventDefault();
+        const d = dist(e.touches[0], e.touches[1]);
+        scale = Math.min(MAX_SCALE, Math.max(1, d / pinchStartDist));
+        applyScale();
+      }
+    }, { passive: false });
+
+    ["touchend", "touchcancel"].forEach(evt => img.addEventListener(evt, e => {
+      if (e.touches.length < 2){
+        pinchStartDist = 0;
+        resetZoom();
+      }
+    }));
+
+    img.addEventListener("wheel", e => {
+      if (!img.src) return;
+      e.preventDefault();
+      setOrigin(e.clientX, e.clientY);
+      scale = Math.min(MAX_SCALE, Math.max(1, scale - e.deltaY * 0.01));
+      img.style.transition = "";
+      applyScale();
+    }, { passive: false });
+
+    img.addEventListener("mouseleave", resetZoom);
+  })();
 
   // ---------- admin ----------
   async function tryAutoLogin(){
